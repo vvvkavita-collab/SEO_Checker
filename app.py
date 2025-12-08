@@ -9,7 +9,17 @@ from openpyxl import load_workbook, Workbook
 from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
 
 # ----------------------------------------------------
-# PREMIUM UI CSS — DARK MODE / NO WHITE CARD
+# PAGE CONFIG — GitHub ribbon removed
+# ----------------------------------------------------
+st.set_page_config(
+    page_title="Advanced SEO Auditor",
+    layout="wide",
+    initial_sidebar_state="auto",
+    menu_items={}  # disables GitHub & About menu
+)
+
+# ----------------------------------------------------
+# PREMIUM UI CSS — Dark mode + fixed file uploader
 # ----------------------------------------------------
 st.markdown("""
 <style>
@@ -17,45 +27,26 @@ html, body, [data-testid="stAppViewContainer"] {
     background: linear-gradient(135deg, #141E30, #243B55) !important;
     color: white !important;
 }
-
-/* Remove Main Card Background */
-[data-testid="stAppViewContainer"] > .main {
-    background: transparent !important;
-    padding: 30px;
-    border-radius: 0px;
-    margin: 0px;
-    box-shadow: none;
-}
-
-/* Sidebar */
 [data-testid="stSidebar"] {
     background: linear-gradient(180deg, #0F2027, #203A43, #2C5364);
     color: white !important;
 }
-
-/* Headings and text */
-h1, h2, h3, h4, h5, h6, p, span, div {
+h1, h2, h3, h4, h5, h6, p, span, div, label {
     color: white !important;
 }
-
-/* Inputs */
 .stTextArea textarea, .stTextInput input {
     background: #1e2a3b !important;
     border: 2px solid #4F81BD !important;
     border-radius: 12px !important;
     color: white !important;
 }
-
-/* File uploader */
-[data-testid="stFileUploader"] {
+.stFileUploader {
     background: #1e2a3b !important;
-    padding: 15px;
-    border-radius: 12px;
-    border: 2px dashed #4F81BD;
     color: white !important;
+    border: 2px dashed #4F81BD !important;
+    border-radius: 12px !important;
+    padding: 15px;
 }
-
-/* Buttons */
 .stButton>button {
     background: #4F81BD !important;
     color: white !important;
@@ -72,13 +63,26 @@ h1, h2, h3, h4, h5, h6, p, span, div {
 """, unsafe_allow_html=True)
 
 # ----------------------------------------------------
-# SAFE GET TEXT
+# SEO Functions (extract_article, seo_analysis_struct, apply_excel_formatting)
 # ----------------------------------------------------
-def safe_get_text(tag):
-    try:
-        return tag.get_text(" ", strip=True)
-    except:
-        return ""
+# [Paste your existing functions here — no change needed in logic]
+
+# ----------------------------------------------------
+# Streamlit UI
+# ----------------------------------------------------
+st.title("🚀 Advanced SEO Auditor – Premium Edition")
+st.subheader("URL Analysis → Excel Report → SEO Guidelines (Auto Generated)")
+
+uploaded = st.file_uploader("Upload URL List (TXT/CSV/XLSX)", type=["txt", "csv", "xlsx"])
+urls_input = st.text_area("Paste URLs here", height=200)
+
+if st.button("Process & Create Excel"):
+    if not urls_input.strip():
+        st.error("Please paste some URLs.")
+    else:
+        urls = [u.strip() for u in urls_input.splitlines() if u.strip()]
+        # [Run your processing logic here — same as your current script]
+        # [Generate Excel, apply formatting, and show download button]
 
 # ----------------------------------------------------
 # ARTICLE EXTRACTOR
@@ -417,4 +421,5 @@ if st.button("Process & Create Excel"):
             file_name="SEO_Audit_Final.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
 
