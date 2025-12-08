@@ -1,3 +1,16 @@
+import streamlit as st
+import pandas as pd
+import requests
+from bs4 import BeautifulSoup
+import re
+from urllib.parse import urlparse
+from io import BytesIO
+from openpyxl import load_workbook, Workbook
+from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
+
+# ----------------------------------------------------
+# PREMIUM UI CSS (FIXED)
+# ----------------------------------------------------
 st.markdown("""
 <style>
 
@@ -18,7 +31,7 @@ html, body, [data-testid="stAppViewContainer"] {
 /* Left Sidebar Background */
 [data-testid="stSidebar"] {
     background: linear-gradient(180deg, #0F2027, #203A43, #2C5364);
-    color: white;
+    color: white !important;
 }
 
 /* Inputs */
@@ -36,7 +49,7 @@ html, body, [data-testid="stAppViewContainer"] {
     border: 2px dashed #4F81BD;
 }
 
-/* Button */
+/* Buttons */
 .stButton>button {
     background: #4F81BD !important;
     color: white !important;
@@ -46,22 +59,13 @@ html, body, [data-testid="stAppViewContainer"] {
     border: none;
     box-shadow: 0px 4px 10px rgba(79,129,189,0.5);
 }
-
 .stButton>button:hover {
     background: #3A6EA5 !important;
 }
 
 </style>
 """, unsafe_allow_html=True)
-import streamlit as st
-import pandas as pd
-import requests
-from bs4 import BeautifulSoup
-import re
-from urllib.parse import urlparse
-from io import BytesIO
-from openpyxl import load_workbook, Workbook
-from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
+
 
 # ----------------------------------------------------
 # SAFE GET TEXT
@@ -422,4 +426,5 @@ if st.button("Process & Create Excel"):
             file_name="SEO_Audit_Final.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
 
