@@ -68,6 +68,26 @@ html, body, [data-testid="stAppViewContainer"] {
 
 
 # ----------------------------------------------------
+# ⭐ HEADING COLOR FIX (NEW CODE)
+# ----------------------------------------------------
+st.markdown("""
+<style>
+h1, .stTitle {
+    color: #ffffff !important;
+    font-weight: 900 !important;
+    text-shadow: 0px 0px 12px rgba(0,0,0,0.6);
+}
+
+h2, .stSubheader {
+    color: #dfe6e9 !important;
+    font-weight: 600 !important;
+    text-shadow: 0px 0px 10px rgba(0,0,0,0.5);
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+# ----------------------------------------------------
 # SAFE GET TEXT
 # ----------------------------------------------------
 def safe_get_text(tag):
@@ -269,14 +289,12 @@ def apply_excel_formatting(workbook_bytes):
 
     center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    # Style header
     for cell in ws[1]:
         cell.font = header_font
         cell.fill = header_fill
         cell.border = thin_border
         cell.alignment = center_align
 
-    # RED highlight for out-of-range values
     for row in ws.iter_rows(min_row=2):
         lookup = {ws.cell(row=1, column=i + 1).value: cell for i, cell in enumerate(row)}
 
@@ -391,7 +409,6 @@ if st.button("Process & Create Excel"):
 
         wb2 = load_workbook(out)
 
-        # Guidelines sheet
         ws_g = wb2.create_sheet("SEO Guidelines")
         ws_g.append(["Parameter", "Meaning / Purpose", "Ideal Range", "Why Important"])
         guidelines = [
@@ -426,5 +443,3 @@ if st.button("Process & Create Excel"):
             file_name="SEO_Audit_Final.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-
-
