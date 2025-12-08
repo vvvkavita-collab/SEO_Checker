@@ -8,7 +8,6 @@ from io import BytesIO
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
 
-
 # ----------------------------------------------------
 # SAFE GET TEXT
 # ----------------------------------------------------
@@ -117,7 +116,7 @@ def extract_article(url):
 
 
 # ----------------------------------------------------
-# SEO ANALYSIS STRUCTURE
+# SEO ANALYSIS
 # ----------------------------------------------------
 def seo_analysis_struct(data):
     title = data["title"]
@@ -162,8 +161,6 @@ def seo_analysis_struct(data):
         score += 12
     if paragraph_count >= 8:
         score += 6
-    if 1 <= keyword_density <= 2:
-        score += 8
     if img_count >= 3:
         score += 8
     if img_count > 0 and alt_with == img_count:
@@ -178,15 +175,10 @@ def seo_analysis_struct(data):
     score = min(score, 100)
 
     grade = (
-        "A+"
-        if score >= 90
-        else "A"
-        if score >= 80
-        else "B"
-        if score >= 65
-        else "C"
-        if score >= 50
-        else "D"
+        "A+" if score >= 90 else
+        "A" if score >= 80 else
+        "B" if score >= 65 else
+        "C" if score >= 50 else "D"
     )
 
     predicted_rating = round(score / 10, 1)
@@ -197,7 +189,7 @@ def seo_analysis_struct(data):
 
 
 # ----------------------------------------------------
-# EXCEL FORMATTER WITH RED HIGHLIGHT
+# EXCEL FORMATTING FIXED (RED HIGHLIGHT WORKING)
 # ----------------------------------------------------
 def apply_excel_formatting(workbook_bytes):
     wb = load_workbook(BytesIO(workbook_bytes))
@@ -207,8 +199,7 @@ def apply_excel_formatting(workbook_bytes):
 
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor="4F81BD")
-
-    red_fill = PatternFill("solid", fgColor="FF9999")
+    red_fill = PatternFill("solid", fgColor="FF7F7F")
 
     thin_border = Border(
         left=Side(style="thin", color="4F81BD"),
@@ -228,61 +219,30 @@ def apply_excel_formatting(workbook_bytes):
 
     # RED highlight for out-of-range values
     for row in ws.iter_rows(min_row=2):
-        row_dict = {ws.cell(row=1, column=i + 1).value: cell for i, cell in enumerate(row)}
+        lookup = {ws.cell(row=1, column=i + 1).value: cell for i, cell in enumerate(row)}
 
-        # Title length
-        if not (50 <= row_dict["Title Length Actual"].value <= 60):
-            row_dict["Title Length Actual"].fill = red_fill
+        def mark_red(key, condition):
+            if condition:
+                lookup[key].fill = red_fill
 
-        # Meta length
-        if not (150 <= row_dict["Meta Length Actual"].value <= 160):
-            row_dict["Meta Length Actual"].fill = red_fill
+        mark_red("Title Length Actual", not (50 <= lookup["Title Length Actual"].value <= 60))
+        mark_red("Meta Length Actual", not (150 <= lookup["Meta Length Actual"].value <= 160))
+        mark_red("H1 Count Actual", lookup["H1 Count Actual"].value != 1)
+        mark_red("H2 Count Actual", not (2 <= lookup["H2 Count Actual"].value <= 5))
+        mark_red("Content Length Actual", lookup["Content Length Actual"].value < 600)
+        mark_red("Paragraph Count Actual", lookup["Paragraph Count Actual"].value < 8)
+        mark_red("Image Count Actual", lookup["Image Count Actual"].value < 3)
+        mark_red("Alt Tags Actual", lookup["Alt Tags Actual"].value < lookup["Image Count Actual"].value)
+        mark_red("Internal Links Actual", not (2 <= lookup["Internal Links Actual"].value <= 5))
+        mark_red("External Links Actual", not (2 <= lookup["External Links Actual"].value <= 4))
+        mark_red("Readability Actual", not (10 <= lookup["Readability Actual"].value <= 20))
 
-        # H1 count
-        if row_dict["H1 Count Actual"].value != 1:
-            row_dict["H1 Count Actual"].fill = red_fill
-
-        # H2 count
-        if not (2 <= row_dict["H2 Count Actual"].value <= 5):
-            row_dict["H2 Count Actual"].fill = red_fill
-
-        # Word count
-        if row_dict["Content Length Actual"].value < 600:
-            row_dict["Content Length Actual"].fill = red_fill
-
-        # Paragraph count
-        if row_dict["Paragraph Count Actual"].value < 8:
-            row_dict["Paragraph Count Actual"].fill = red_fill
-
-        # Image count
-        if row_dict["Image Count Actual"].value < 3:
-            row_dict["Image Count Actual"].fill = red_fill
-
-        # Alt tags
-        if row_dict["Alt Tags Actual"].value < row_dict["Image Count Actual"].value:
-            row_dict["Alt Tags Actual"].fill = red_fill
-
-        # Internal links
-        if not (2 <= row_dict["Internal Links Actual"].value <= 5):
-            row_dict["Internal Links Actual"].fill = red_fill
-
-        # External links
-        if not (2 <= row_dict["External Links Actual"].value <= 4):
-            row_dict["External Links Actual"].fill = red_fill
-
-        # Readability
-        if not (10 <= row_dict["Readability Actual"].value <= 20):
-            row_dict["Readability Actual"].fill = red_fill
-
-        # Apply borders and alignment
         for cell in row:
             cell.border = thin_border
             cell.alignment = center_align
 
-    # Column width
     for col in ws.columns:
-        col_letter = col[0].column_letter
-        ws.column_dimensions[col_letter].width = 22
+        ws.column_dimensions[col[0].column_letter].width = 22
 
     out = BytesIO()
     wb.save(out)
@@ -290,67 +250,35 @@ def apply_excel_formatting(workbook_bytes):
 
 
 # ----------------------------------------------------
-# Guideline Sheet
+# PREMIUM UI CSS — FIXED & RESTORED
 # ----------------------------------------------------
-def add_guideline_sheet(wb):
-    ws = wb.create_sheet("SEO Guidelines")
-    ws.append(["Parameter", "Meaning / Purpose", "Ideal Range", "Why Important"])
-
-    data_list = [
-        ("Title Length", "Main headline", "50–60 chars", "CTR + Ranking"),
-        ("Meta Description", "Search snippet text", "150–160 chars", "CTR improvement"),
-        ("H1 Count", "Main heading", "1", "Topic clarity for Google"),
-        ("H2 Count", "Subheadings structure", "2–5", "Readability + SEO"),
-        ("Content Length", "Total words", "600+", "Depth of content"),
-        ("Paragraph Count", "Sections", "8+", "User experience"),
-        ("Keyword Density", "Keywords %", "1–2%", "Avoid stuffing"),
-        ("Images", "Total visuals", "3+", "Engagement"),
-        ("Alt Tags", "Image alt text", "All images", "Image SEO"),
-        ("Internal Links", "Same site links", "2–5", "Structure + ranking"),
-        ("External Links", "Trusted external links", "2–4", "Credibility"),
-        ("Readability", "Words per sentence", "10–20", "Better user retention"),
-    ]
-
-    for row in data_list:
-        ws.append(row)
-
-    for col in ws.columns:
-        ws.column_dimensions[col[0].column_letter].width = 25
-
-
-# ----------------------------------------------------
-# STREAMLIT PREMIUM UI
-# ----------------------------------------------------
-st.markdown(
-    """
+st.markdown("""
 <style>
 body {
-    background: linear-gradient(135deg, #1F1C2C, #928DAB);
+    background: linear-gradient(135deg, #141E30, #243B55);
 }
 .main {
-    background: #ffffffdd;
+    background: #ffffffee !important;
     padding: 25px;
     border-radius: 15px;
-    box-shadow: 0px 4px 20px rgba(0,0,0,0.4);
+    box-shadow: 0px 4px 25px rgba(0,0,0,0.5);
 }
-textarea, .stTextInput, .stFileUploader {
-    border-radius: 10px !important;
+.stTextArea, .stTextInput, .stFileUploader {
+    border-radius: 12px !important;
     border: 2px solid #4F81BD !important;
-    background: #F4F6FA !important;
+    background: #F5F7FA !important;
 }
 </style>
-""",
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
 
-st.title("🚀 Advanced SEO Auditor – Premium Version")
-st.subheader("Analyze URLs + Auto Excel + SEO Guidelines Sheet")
+st.title("🚀 Advanced SEO Auditor – Premium Edition")
+st.subheader("URL Analysis → Excel Report → SEO Guidelines (Auto Generated)")
 
 
 # ----------------------------------------------------
 # INPUT AREA
 # ----------------------------------------------------
-uploaded = st.file_uploader("Upload URL List (txt/csv/xlsx)", type=["txt", "csv", "xlsx"])
+uploaded = st.file_uploader("Upload URL List (TXT/CSV/XLSX)", type=["txt", "csv", "xlsx"])
 urls_input = st.text_area("Paste URLs here", height=200)
 
 
@@ -359,12 +287,10 @@ urls_input = st.text_area("Paste URLs here", height=200)
 # ----------------------------------------------------
 if st.button("Process & Create Excel"):
 
-    raw = urls_input.strip()
-
-    if not raw:
+    if not urls_input.strip():
         st.error("Please paste some URLs.")
     else:
-        urls = [u.strip() for u in raw.splitlines() if u.strip()]
+        urls = [u.strip() for u in urls_input.splitlines() if u.strip()]
 
         rows = []
         pairs_reference = None
@@ -374,7 +300,6 @@ if st.button("Process & Create Excel"):
 
         for i, url in enumerate(urls, start=1):
             status.text(f"Processing {i}/{len(urls)} : {url}")
-
             data = extract_article(url)
             score, grade, predicted, pairs, extras = seo_analysis_struct(data)
 
@@ -406,14 +331,35 @@ if st.button("Process & Create Excel"):
             df.to_excel(writer, index=False, sheet_name="Audit")
 
         wb2 = load_workbook(out)
-        add_guideline_sheet(wb2)
+
+        # Guidelines sheet
+        ws_g = wb2.create_sheet("SEO Guidelines")
+        ws_g.append(["Parameter", "Meaning / Purpose", "Ideal Range", "Why Important"])
+        guidelines = [
+            ("Title Length", "Main headline", "50–60 chars", "CTR + Ranking"),
+            ("Meta Description", "Search snippet text", "150–160 chars", "CTR improvement"),
+            ("H1 Count", "Main heading", "1", "Topic clarity"),
+            ("H2 Count", "Subheadings", "2–5", "Readability + SEO"),
+            ("Content Length", "Total words", "600+", "Depth of content"),
+            ("Paragraph Count", "Sections", "8+", "User experience"),
+            ("Keyword Density", "Keyword %", "1–2%", "Avoid stuffing"),
+            ("Images", "Visuals", "3+", "Engagement"),
+            ("Alt Tags", "Image alt text", "All", "Image SEO"),
+            ("Internal Links", "Site links", "2–5", "Ranking"),
+            ("External Links", "Trusted links", "2–4", "Credibility"),
+            ("Readability", "Words/sentence", "10–20", "Better retention"),
+        ]
+        for row in guidelines:
+            ws_g.append(row)
+        for col in ws_g.columns:
+            ws_g.column_dimensions[col[0].column_letter].width = 25
 
         final_export = BytesIO()
         wb2.save(final_export)
 
         final_bytes = apply_excel_formatting(final_export.getvalue())
 
-        st.success("🎉 Excel created successfully with SEO Guidelines")
+        st.success("🎉 Excel created successfully!")
 
         st.download_button(
             "Download SEO Audit Excel",
