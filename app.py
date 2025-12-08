@@ -1,3 +1,58 @@
+st.markdown("""
+<style>
+
+html, body, [data-testid="stAppViewContainer"] {
+    background: linear-gradient(135deg, #141E30, #243B55) !important;
+    height: 100%;
+}
+
+/* Main White Card */
+[data-testid="stAppViewContainer"] > .main {
+    background: #ffffffdd !important;
+    padding: 30px;
+    border-radius: 18px;
+    margin: 30px;
+    box-shadow: 0px 4px 30px rgba(0,0,0,0.4);
+}
+
+/* Left Sidebar Background */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0F2027, #203A43, #2C5364);
+    color: white;
+}
+
+/* Inputs */
+.stTextArea textarea, .stTextInput input {
+    background: #F5F7FA !important;
+    border: 2px solid #4F81BD !important;
+    border-radius: 12px !important;
+}
+
+/* File uploader */
+[data-testid="stFileUploader"] {
+    background: #F5F7FA !important;
+    padding: 15px;
+    border-radius: 12px;
+    border: 2px dashed #4F81BD;
+}
+
+/* Button */
+.stButton>button {
+    background: #4F81BD !important;
+    color: white !important;
+    border-radius: 10px;
+    padding: 10px 20px;
+    font-size: 18px;
+    border: none;
+    box-shadow: 0px 4px 10px rgba(79,129,189,0.5);
+}
+
+.stButton>button:hover {
+    background: #3A6EA5 !important;
+}
+
+</style>
+""", unsafe_allow_html=True)
 import streamlit as st
 import pandas as pd
 import requests
@@ -367,3 +422,4 @@ if st.button("Process & Create Excel"):
             file_name="SEO_Audit_Final.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
