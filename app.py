@@ -214,5 +214,7 @@ def apply_excel_formatting(workbook_bytes):
     ws.sheet_view.showGridLines = False
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor="4F81BD")
-    red_fill = PatternFill("solid", fgColor="
+    red_fill = PatternFill("solid", fgColor="FF7F7F")
+
+
 
