@@ -6,17 +6,8 @@ import re
 from collections import Counter
 from urllib.parse import urlparse
 from io import BytesIO
-from openpyxl import load_workbook
+from openpyxl import load_workbook, Workbook
 from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
-
-# ----------------------------------------------------
-# LIMIT STRING LENGTH (max 20)
-# ----------------------------------------------------
-def short(text, limit=20):
-    if not text:
-        return ""
-    text = str(text).strip()
-    return text[:limit] + ("..." if len(text) > limit else "")
 
 # ----------------------------------------------------
 # SAFE GET TEXT
@@ -35,6 +26,7 @@ def extract_article(url):
         headers = {"User-Agent": "Mozilla/5.0"}
         r = requests.get(url, headers=headers, timeout=15)
         r.raise_for_status()
+
         soup = BeautifulSoup(r.text, "html.parser")
 
         title = soup.title.string.strip() if soup.title and soup.title.string else ""
@@ -64,7 +56,6 @@ def extract_article(url):
             href = a.get("href") or ""
             if href.startswith("#") or href.startswith("mailto:") or href.strip() == "":
                 continue
-
             parsed = urlparse(href)
             if parsed.netloc and parsed.netloc.lower() != domain:
                 external_links += 1
@@ -74,6 +65,7 @@ def extract_article(url):
         paragraph_count = len([p for p in paras if safe_get_text(p)])
         sentences = re.split(r'[.!?]\s+', article)
         sentence_count = len([s for s in sentences if s.strip()])
+
         words = article.split()
         word_count = len(words)
 
@@ -86,7 +78,7 @@ def extract_article(url):
                 summary += "."
 
         return {
-            "title": short(title),
+            "title": title[:20],
             "meta": meta_desc,
             "article": article,
             "h1": h1,
@@ -99,8 +91,9 @@ def extract_article(url):
             "sentence_count": sentence_count,
             "word_count": word_count,
             "avg_words_per_sentence": avg_words_per_sentence,
-            "summary": short(summary)
+            "summary": summary[:20]
         }
+
     except:
         return {
             "title": "",
@@ -119,23 +112,9 @@ def extract_article(url):
             "summary": ""
         }
 
-# ----------------------------------------------------
-# STOPWORDS + KEYWORD EXTRACTION
-# ----------------------------------------------------
-STOPWORDS = set("""a about above after again against all am an and any are as at be because been before being between both but by can cannot could did do does doing down during each few for from further had has have having he her here hers him his how i if in into is it its me more most my myself no nor not of off on once only or other our ours ourselves out over own same she should so some such than that the their theirs them themselves then there these they this those through to too under until up very was we well were what when where which while who whom why with you your yours""".split())
-
-def extract_keywords(text, top_n=5):
-    if not text:
-        return []
-    words = re.findall(r'\b[a-zA-Z\u0900-\u097F0-9]+\b', text.lower())
-    words = [w for w in words if w not in STOPWORDS and len(w) > 2]
-    if not words:
-        return []
-    cnt = Counter(words)
-    return [w for w, _ in cnt.most_common(top_n)]
 
 # ----------------------------------------------------
-# SEO ANALYSIS
+# SEO ANALYSIS FUNCTION
 # ----------------------------------------------------
 def seo_analysis_struct(data):
     title = data["title"]
@@ -166,7 +145,7 @@ def seo_analysis_struct(data):
         ("Alt Tags Ideal", "All images", "Alt Tags Actual", alt_with),
         ("Internal Links Ideal", "2-5", "Internal Links Actual", internal_links),
         ("External Links Ideal", "2-4", "External Links Actual", external_links),
-        ("Readability Ideal (avg words/sent)", "10-20", "Readability Actual (avg words/sent)", avg_wps),
+        ("Readability Ideal (avg words/sent)", "10-20", "Readability Actual (avg words/sent)", avg_wps)
     ]
 
     score = 0
@@ -176,6 +155,7 @@ def seo_analysis_struct(data):
     if 2 <= h2_count <= 5: score += 6
     if word_count >= 600: score += 12
     if paragraph_count >= 8: score += 6
+    if 1 <= keyword_density <= 2: score += 8
     if img_count >= 3: score += 8
     if img_count > 0 and alt_with == img_count: score += 6
     if 2 <= internal_links <= 5: score += 4
@@ -184,102 +164,16 @@ def seo_analysis_struct(data):
 
     score = min(score, 100)
 
-    grade = (
-        "A+" if score >= 90 else
-        "A" if score >= 80 else
-        "B" if score >= 65 else
-        "C" if score >= 50 else
-        "D"
-    )
-
+    grade = ("A+" if score >= 90 else "A" if score >= 80 else "B" if score >= 65 else "C" if score >= 50 else "D")
     predicted_rating = round(score / 10, 1)
 
-    extras = {
-        "Summary": short(data["summary"])
-    }
+    extras = {"Summary": data["summary"]}
 
     return score, grade, predicted_rating, pairs, extras
 
-# ----------------------------------------------------
-# NUMERIC PARSER
-# ----------------------------------------------------
-def parse_numeric(val):
-    try:
-        if val is None: return None
-        if isinstance(val, (int, float)): return float(val)
-        s = str(val).strip().replace(",", "")
-        if s.endswith("%"): return float(s[:-1])
-        m = re.search(r"[-]?\d+(\.\d+)?", s)
-        return float(m.group(0)) if m else None
-    except:
-        return None
 
 # ----------------------------------------------------
-# COLORING FUNCTION
-# ----------------------------------------------------
-def apply_coloring_and_flags(workbook_bytes):
-    red_fill = PatternFill(start_color="FFC7CE", fill_type="solid")
-
-    grade_colors = {
-        "A+": "C6EFCE",
-        "A": "E2EFDA",
-        "B": "FFF2CC",
-        "C": "FCE4D6",
-        "D": "F8CBAD"
-    }
-
-    wb = load_workbook(BytesIO(workbook_bytes))
-    ws = wb.active
-
-    headers = [c.value for c in ws[1]]
-    header_index = {h: i for i, h in enumerate(headers)}
-
-    for row in ws.iter_rows(min_row=2):
-        data = {headers[i]: row[i] for i in range(len(headers))}
-
-        for h, idx in header_index.items():
-            if "Actual" not in h:
-                continue
-
-            cell = row[idx]
-            val = parse_numeric(cell.value)
-            fail = False
-
-            try:
-                if h.lower() == "title length actual": fail = val < 50 or val > 60
-                elif h.lower() == "meta length actual": fail = val < 150 or val > 160
-                elif h.lower() == "h1 count actual": fail = val != 1
-                elif h.lower() == "h2 count actual": fail = val < 2 or val > 5
-                elif h.lower() == "content length actual": fail = val < 600
-                elif h.lower() == "paragraph count actual": fail = val < 8
-                elif "keyword density" in h.lower(): fail = val < 1 or val > 2
-                elif h.lower() == "image count actual": fail = val < 3
-                elif h.lower() == "alt tags actual":
-                    img_act = parse_numeric(data["Image Count Actual"].value)
-                    fail = val < img_act
-                elif h.lower() == "internal links actual": fail = val < 2 or val > 5
-                elif h.lower() == "external links actual": fail = val < 2 or val > 4
-                elif "readability" in h.lower(): fail = val < 10 or val > 20
-            except:
-                fail = False
-
-            if fail:
-                cell.fill = red_fill
-
-        grade = data.get("SEO Grade").value
-        score_cell = data.get("SEO Score")
-
-        if grade in grade_colors:
-            color = PatternFill(start_color=grade_colors[grade], fill_type="solid")
-            data["SEO Grade"].fill = color
-            score_cell.fill = color
-
-    out = BytesIO()
-    wb.save(out)
-    return out.getvalue()
-
-# ----------------------------------------------------
-# EXCEL FORMATTING FUNCTION
+# EXCEL FORMATTER
 # ----------------------------------------------------
 def apply_excel_formatting(workbook_bytes):
     wb = load_workbook(BytesIO(workbook_bytes))
@@ -307,74 +201,90 @@ def apply_excel_formatting(workbook_bytes):
                 cell.font = header_font
                 cell.fill = header_fill
 
+    # Column limit for URL, Title, Summary
     for col_idx, col in enumerate(ws.columns, 1):
-        column_letter = col[0].column_letter
-        max_len = max(len(str(cell.value)) for cell in col if cell.value)
-
-        if col_idx in [1, 2, 3]:  
-            ws.column_dimensions[column_letter].width = min(20, max_len + 2)
-        else:
-            ws.column_dimensions[column_letter].width = max_len + 2
+        col_letter = col[0].column_letter
+        max_len = max(len(str(c.value)) for c in col if c.value)
+        ws.column_dimensions[col_letter].width = min(20, max_len + 2)
 
     out = BytesIO()
     wb.save(out)
     return out.getvalue()
 
-# ----------------------------------------------------
-# BEAUTIFUL STREAMLIT UI
-# ----------------------------------------------------
-st.set_page_config(page_title="Advanced SEO Auditor", layout="wide")
 
+# ----------------------------------------------------
+# CREATE GUIDELINE SHEET
+# ----------------------------------------------------
+def add_guideline_sheet(wb):
+    ws2 = wb.create_sheet("SEO Guidelines")
+
+    ws2.append(["Parameter", "Meaning / Purpose", "Ideal Range", "Why Important for SEO"])
+
+    guidelines = [
+        ("Title Length", "Main title shown on Google search", "50-60 chars", "Helps CTR & keyword visibility"),
+        ("Meta Description", "Short description in Google result", "150-160 chars", "Improves click-through rate"),
+        ("H1 Count", "Main page heading", "1", "Helps Google understand main topic"),
+        ("H2 Count", "Sub-headings", "2-5", "Improves readability & keyword structure"),
+        ("Content Length", "Total article words", "600+", "Longer content ranks higher"),
+        ("Paragraph Count", "Total paragraphs", "8+", "Improves user experience & clarity"),
+        ("Keyword Density", "Keyword % in article", "1-2%", "Prevents keyword stuffing"),
+        ("Image Count", "Images in article", "3+", "Improves engagement"),
+        ("Alt Tags", "Image alternative text", "All", "Helps Google image SEO"),
+        ("Internal Links", "Links within website", "2-5", "Helps site structure"),
+        ("External Links", "Useful outside links", "2-4", "Improves credibility"),
+        ("Readability", "Words per sentence", "10-20", "Easy to read content ranks higher"),
+    ]
+
+    for row in guidelines:
+        ws2.append(row)
+
+    for col in ws2.columns:
+        ws2.column_dimensions[col[0].column_letter].width = 25
+
+
+# ----------------------------------------------------
+# STREAMLIT PREMIUM UI
+# ----------------------------------------------------
 st.markdown("""
-<style>
-body {
-    background: linear-gradient(to right, #dff1ff, #cce6ff);
-}
-.big-title {
-    font-size: 32px;
-    font-weight: 800;
-    color:#004a7f;
-}
-.card {
-    padding:20px;
-    background:white;
-    border-radius:12px;
-    box-shadow:0px 3px 15px rgba(0,0,0,0.1);
-}
-</style>
+    <style>
+        body {
+            background: linear-gradient(135deg, #1F1C2C, #928DAB);
+        }
+        .main {
+            background: #ffffffdd;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0px 4px 20px rgba(0,0,0,0.3);
+        }
+        textarea, .stTextInput, .stFileUploader {
+            border-radius: 10px !important;
+            border: 2px solid #4F81BD !important;
+            background: #F4F6FA !important;
+        }
+    </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<div class='big-title'>🚀 Advanced SEO Auditor</div>", unsafe_allow_html=True)
-st.write("Upload URLs or paste manually. Tool crawls pages & generates Excel with SEO scoring and red-flag highlighting.")
 
-# Upload Inputs
-uploaded = st.file_uploader("Upload URL file (txt/csv/xlsx)", type=["txt", "csv", "xlsx"])
-urls_input = st.text_area("Paste URLs here", height=200)
+st.title("🚀 Advanced SEO Auditor – Premium UI")
+st.subheader("Analyze multiple URLs and generate a professional SEO audit Excel with guidelines sheet")
 
-if uploaded:
-    try:
-        if uploaded.name.endswith(".txt"):
-            urls = uploaded.read().decode("utf-8").splitlines()
-        elif uploaded.name.endswith(".csv"):
-            urls = pd.read_csv(uploaded, header=None)[0].dropna().tolist()
-        else:
-            urls = pd.read_excel(uploaded, header=None)[0].dropna().tolist()
 
-        urls_input = "\n".join([u.strip() for u in urls if u.strip()])
-        st.success(f"Loaded {len(urls)} URLs.")
-    except Exception as e:
-        st.error(f"Error reading file: {e}")
+uploaded = st.file_uploader("Upload URL File (txt/csv/xlsx)", type=["txt", "csv", "xlsx"])
+urls_input = st.text_area("Paste URLs here (one per line)", height=200)
 
+
+# ----------------------------------------------------
+# PROCESSING
+# ----------------------------------------------------
 process_btn = st.button("Process & Create Excel")
 
 if process_btn:
     raw = urls_input.strip()
 
     if not raw:
-        st.error("No URLs entered.")
+        st.error("No URLs entered")
     else:
         urls = [u.strip() for u in raw.splitlines() if u.strip()]
-
         rows = []
         pairs_reference = None
 
@@ -391,12 +301,11 @@ if process_btn:
                 pairs_reference = pairs
 
             row = {
-                "URL": short(url),
+                "URL": url[:20],
                 "Title": data["title"],
                 "Summary": extras["Summary"],
                 "SEO Score": score,
                 "SEO Grade": grade,
-                "Overall Score": score,
                 "Predicted Public Rating": predicted
             }
 
@@ -405,31 +314,29 @@ if process_btn:
                 row[actual_col] = actual_val
 
             rows.append(row)
-            progress.progress(i / len(urls))
+            progress.progress(int(i / len(urls) * 100))
 
         df = pd.DataFrame(rows)
 
         out = BytesIO()
+        wb = Workbook()
+
         with pd.ExcelWriter(out, engine="openpyxl") as writer:
             df.to_excel(writer, index=False, sheet_name="Audit")
-        raw_bytes = out.getvalue()
 
-        formatted_bytes = apply_excel_formatting(raw_bytes)
+        wb2 = load_workbook(out)
+        add_guideline_sheet(wb2)
 
-        try:
-            colored = apply_coloring_and_flags(formatted_bytes)
-            st.success("Excel created successfully with formatting & color flags.")
-            st.download_button(
-                "📥 Download SEO Audit (Colored)",
-                data=colored,
-                file_name="seo_audit_colored.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        except:
-            st.warning("Coloring failed — providing plain formatted Excel.")
-            st.download_button(
-                "📥 Download SEO Audit (Plain Formatted)",
-                data=formatted_bytes,
-                file_name="seo_audit_formatted.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+        final_out = BytesIO()
+        wb2.save(final_out)
+
+        final_bytes = apply_excel_formatting(final_out.getvalue())
+
+        st.success("Excel created successfully with Guidelines Sheet")
+
+        st.download_button(
+            "Download Complete SEO Audit",
+            data=final_bytes,
+            file_name="SEO_Audit_Final.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
