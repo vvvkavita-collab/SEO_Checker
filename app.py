@@ -63,26 +63,13 @@ h1, h2, h3, h4, h5, h6, p, span, div, label {
 """, unsafe_allow_html=True)
 
 # ----------------------------------------------------
-# SEO Functions (extract_article, seo_analysis_struct, apply_excel_formatting)
+# SAFE GET TEXT
 # ----------------------------------------------------
-# [Paste your existing functions here — no change needed in logic]
-
-# ----------------------------------------------------
-# Streamlit UI
-# ----------------------------------------------------
-st.title("🚀 Advanced SEO Auditor – Premium Edition")
-st.subheader("URL Analysis → Excel Report → SEO Guidelines (Auto Generated)")
-
-uploaded = st.file_uploader("Upload URL List (TXT/CSV/XLSX)", type=["txt", "csv", "xlsx"])
-urls_input = st.text_area("Paste URLs here", height=200)
-
-if st.button("Process & Create Excel"):
-    if not urls_input.strip():
-        st.error("Please paste some URLs.")
-    else:
-        urls = [u.strip() for u in urls_input.splitlines() if u.strip()]
-        # [Run your processing logic here — same as your current script]
-        # [Generate Excel, apply formatting, and show download button]
+def safe_get_text(tag):
+    try:
+        return tag.get_text(" ", strip=True)
+    except:
+        return ""
 
 # ----------------------------------------------------
 # ARTICLE EXTRACTOR
@@ -101,7 +88,7 @@ def extract_article(url):
         if md and md.get("content"):
             meta_desc = md.get("content").strip()
         paras = soup.find_all("p")
-        article = " ".join([safe_get_text(p) for p in paras]).strip()
+        article = " ". ".join([safe_get_text(p) for p in paras]).strip()
         article = re.sub(r"\s+", " ", article)
         h1 = [safe_get_text(t) for t in soup.find_all("h1")]
         h2 = [safe_get_text(t) for t in soup.find_all("h2")]
@@ -167,12 +154,6 @@ def extract_article(url):
         }
 
 # ----------------------------------------------------
-# (Rest of your SEO analysis, Excel formatting, and Streamlit code)
-# remains the same
-# ----------------------------------------------------
-
-
-# ----------------------------------------------------
 # SEO ANALYSIS
 # ----------------------------------------------------
 def seo_analysis_struct(data):
@@ -206,220 +187,31 @@ def seo_analysis_struct(data):
     ]
 
     score = 0
-    if 50 <= len(title) <= 60:
-        score += 10
-    if 150 <= len(meta) <= 160:
-        score += 10
-    if h1_count == 1:
-        score += 8
-    if 2 <= h2_count <= 5:
-        score += 6
-    if word_count >= 600:
-        score += 12
-    if paragraph_count >= 8:
-        score += 6
-    if img_count >= 3:
-        score += 8
-    if img_count > 0 and alt_with == img_count:
-        score += 6
-    if 2 <= internal_links <= 5:
-        score += 4
-    if 2 <= external_links <= 4:
-        score += 4
-    if 10 <= avg_wps <= 20:
-        score += 8
+    if 50 <= len(title) <= 60: score += 10
+    if 150 <= len(meta) <= 160: score += 10
+    if h1_count == 1: score += 8
+    if 2 <= h2_count <= 5: score += 6
+    if word_count >= 600: score += 12
+    if paragraph_count >= 8: score += 6
+    if img_count >= 3: score += 8
+    if img_count > 0 and alt_with == img_count: score += 6
+    if 2 <= internal_links <= 5: score += 4
+    if 2 <= external_links <= 4: score += 4
+    if 10 <= avg_wps <= 20: score += 8
 
     score = min(score, 100)
-
-    grade = (
-        "A+" if score >= 90 else
-        "A" if score >= 80 else
-        "B" if score >= 65 else
-        "C" if score >= 50 else "D"
-    )
-
+    grade = "A+" if score >= 90 else "A" if score >= 80 else "B" if score >= 65 else "C" if score >= 50 else "D"
     predicted_rating = round(score / 10, 1)
-
     extras = {"Summary": data["summary"]}
-
     return score, grade, predicted_rating, pairs, extras
 
-
 # ----------------------------------------------------
-# EXCEL FORMATTING FIXED (RED HIGHLIGHT WORKING)
+# EXCEL FORMATTING
 # ----------------------------------------------------
 def apply_excel_formatting(workbook_bytes):
     wb = load_workbook(BytesIO(workbook_bytes))
     ws = wb["Audit"]
-
     ws.sheet_view.showGridLines = False
-
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor="4F81BD")
-    red_fill = PatternFill("solid", fgColor="FF7F7F")
-
-    thin_border = Border(
-        left=Side(style="thin", color="4F81BD"),
-        right=Side(style="thin", color="4F81BD"),
-        top=Side(style="thin", color="4F81BD"),
-        bottom=Side(style="thin", color="4F81BD"),
-    )
-
-    center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
-
-    for cell in ws[1]:
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.border = thin_border
-        cell.alignment = center_align
-
-    for row in ws.iter_rows(min_row=2):
-        lookup = {ws.cell(row=1, column=i + 1).value: cell for i, cell in enumerate(row)}
-
-        def mark_red(key, condition):
-            if condition:
-                lookup[key].fill = red_fill
-
-        mark_red("Title Length Actual", not (50 <= lookup["Title Length Actual"].value <= 60))
-        mark_red("Meta Length Actual", not (150 <= lookup["Meta Length Actual"].value <= 160))
-        mark_red("H1 Count Actual", lookup["H1 Count Actual"].value != 1)
-        mark_red("H2 Count Actual", not (2 <= lookup["H2 Count Actual"].value <= 5))
-        mark_red("Content Length Actual", lookup["Content Length Actual"].value < 600)
-        mark_red("Paragraph Count Actual", lookup["Paragraph Count Actual"].value < 8)
-        mark_red("Image Count Actual", lookup["Image Count Actual"].value < 3)
-        mark_red("Alt Tags Actual", lookup["Alt Tags Actual"].value < lookup["Image Count Actual"].value)
-        mark_red("Internal Links Actual", not (2 <= lookup["Internal Links Actual"].value <= 5))
-        mark_red("External Links Actual", not (2 <= lookup["External Links Actual"].value <= 4))
-        mark_red("Readability Actual", not (10 <= lookup["Readability Actual"].value <= 20))
-
-        for cell in row:
-            cell.border = thin_border
-            cell.alignment = center_align
-
-    for col in ws.columns:
-        ws.column_dimensions[col[0].column_letter].width = 22
-
-    out = BytesIO()
-    wb.save(out)
-    return out.getvalue()
-
-
-# ----------------------------------------------------
-# PREMIUM UI CSS — FIXED & RESTORED
-# ----------------------------------------------------
-st.markdown("""
-<style>
-body {
-    background: linear-gradient(135deg, #141E30, #243B55);
-}
-.main {
-    background: #ffffffee !important;
-    padding: 25px;
-    border-radius: 15px;
-    box-shadow: 0px 4px 25px rgba(0,0,0,0.5);
-}
-.stTextArea, .stTextInput, .stFileUploader {
-    border-radius: 12px !important;
-    border: 2px solid #4F81BD !important;
-    background: #F5F7FA !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
-st.title("🚀 Advanced SEO Auditor – Premium Edition")
-st.subheader("URL Analysis → Excel Report → SEO Guidelines (Auto Generated)")
-
-
-# ----------------------------------------------------
-# INPUT AREA
-# ----------------------------------------------------
-uploaded = st.file_uploader("Upload URL List (TXT/CSV/XLSX)", type=["txt", "csv", "xlsx"])
-urls_input = st.text_area("Paste URLs here", height=200)
-
-
-# ----------------------------------------------------
-# PROCESS BUTTON
-# ----------------------------------------------------
-if st.button("Process & Create Excel"):
-
-    if not urls_input.strip():
-        st.error("Please paste some URLs.")
-    else:
-        urls = [u.strip() for u in urls_input.splitlines() if u.strip()]
-
-        rows = []
-        pairs_reference = None
-
-        progress = st.progress(0)
-        status = st.empty()
-
-        for i, url in enumerate(urls, start=1):
-            status.text(f"Processing {i}/{len(urls)} : {url}")
-            data = extract_article(url)
-            score, grade, predicted, pairs, extras = seo_analysis_struct(data)
-
-            if pairs_reference is None:
-                pairs_reference = pairs
-
-            row = {
-                "URL": url[:20],
-                "Title": data["title"],
-                "Summary": extras["Summary"],
-                "SEO Score": score,
-                "SEO Grade": grade,
-                "Predicted Public Rating": predicted,
-            }
-
-            for ideal, ideal_val, actual, actual_val in pairs_reference:
-                row[ideal] = ideal_val
-                row[actual] = actual_val
-
-            rows.append(row)
-            progress.progress(int((i / len(urls)) * 100))
-
-        df = pd.DataFrame(rows)
-
-        out = BytesIO()
-        wb = Workbook()
-
-        with pd.ExcelWriter(out, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name="Audit")
-
-        wb2 = load_workbook(out)
-
-        ws_g = wb2.create_sheet("SEO Guidelines")
-        ws_g.append(["Parameter", "Meaning / Purpose", "Ideal Range", "Why Important"])
-        guidelines = [
-            ("Title Length", "Main headline", "50–60 chars", "CTR + Ranking"),
-            ("Meta Description", "Search snippet text", "150–160 chars", "CTR improvement"),
-            ("H1 Count", "Main heading", "1", "Topic clarity"),
-            ("H2 Count", "Subheadings", "2–5", "Readability + SEO"),
-            ("Content Length", "Total words", "600+", "Depth of content"),
-            ("Paragraph Count", "Sections", "8+", "User experience"),
-            ("Keyword Density", "Keyword %", "1–2%", "Avoid stuffing"),
-            ("Images", "Visuals", "3+", "Engagement"),
-            ("Alt Tags", "Image alt text", "All", "Image SEO"),
-            ("Internal Links", "Site links", "2–5", "Ranking"),
-            ("External Links", "Trusted links", "2–4", "Credibility"),
-            ("Readability", "Words/sentence", "10–20", "Better retention"),
-        ]
-        for row in guidelines:
-            ws_g.append(row)
-        for col in ws_g.columns:
-            ws_g.column_dimensions[col[0].column_letter].width = 25
-
-        final_export = BytesIO()
-        wb2.save(final_export)
-
-        final_bytes = apply_excel_formatting(final_export.getvalue())
-
-        st.success("🎉 Excel created successfully!")
-
-        st.download_button(
-            "Download SEO Audit Excel",
-            data=final_bytes,
-            file_name="SEO_Audit_Final.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-
-
+    red_fill = PatternFill("solid", fgColor="
