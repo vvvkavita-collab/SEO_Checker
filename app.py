@@ -88,7 +88,7 @@ def extract_article(url):
         if md and md.get("content"):
             meta_desc = md.get("content").strip()
         paras = soup.find_all("p")
-        article = " ". ".join([safe_get_text(p) for p in paras]).strip()
+        article = ".".join([safe_get_text(p) for p in paras]).strip()
         article = re.sub(r"\s+", " ", article)
         h1 = [safe_get_text(t) for t in soup.find_all("h1")]
         h2 = [safe_get_text(t) for t in soup.find_all("h2")]
@@ -215,3 +215,4 @@ def apply_excel_formatting(workbook_bytes):
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor="4F81BD")
     red_fill = PatternFill("solid", fgColor="
+
