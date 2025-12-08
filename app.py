@@ -8,7 +8,6 @@ from urllib.parse import urlparse
 from io import BytesIO
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
-from openpyxl.utils import get_column_letter
 
 # ----------------------------------------------------
 # SAFE GET TEXT
@@ -136,11 +135,9 @@ def seo_analysis_struct(data):
     external_links = data["external_links"]
     avg_wps = data["avg_words_per_sentence"]
 
-    title_kw = extract_keywords(title, 3)
-    article_kw = extract_keywords(article, 10)
-    keyword = title_kw[0] if title_kw else (article_kw[0] if article_kw else "")
-    keyword_count = article.lower().count(keyword.lower()) if keyword else 0
-    keyword_density = round((keyword_count / max(1, word_count)) * 100, 2)
+    keyword = ""
+    keyword_count = 0
+    keyword_density = 0
 
     pairs = [
         ("Title Length Ideal","50-60 chars","Title Length Actual",len(title)),
@@ -183,9 +180,6 @@ def seo_analysis_struct(data):
     predicted_rating = round(score / 10, 1)
 
     extras = {
-        "Keyword Selected": keyword,
-        "Keyword Count": keyword_count,
-        "Top Keywords (article)": ", ".join(article_kw[:5]),
         "Summary": data["summary"]
     }
 
@@ -284,13 +278,15 @@ def apply_excel_formatting(workbook_bytes):
             if row_idx == 1:
                 cell.font = header_font
                 cell.fill = header_fill
-    for col in ws.columns:
-        max_length = 0
-        column = col[0].column_letter
-        for cell in col:
-            if cell.value:
-                max_length = max(max_length, len(str(cell.value)))
-        ws.column_dimensions[column].width = max_length + 2
+    # Column widths with max 20 for URL, Title, Summary
+    for col_idx, col in enumerate(ws.columns, 1):
+        column_letter = col[0].column_letter
+        if col_idx in [1,2, len(ws[1])]:  # URL, Title, Summary
+            max_len = max(len(str(cell.value)) for cell in col if cell.value)
+            ws.column_dimensions[column_letter].width = min(20, max_len + 2)
+        else:
+            max_len = max(len(str(cell.value)) for cell in col if cell.value)
+            ws.column_dimensions[column_letter].width = max_len + 2
     out = BytesIO()
     wb.save(out)
     return out.getvalue()
@@ -339,6 +335,7 @@ if process_btn:
             row = {
                 "URL": url,
                 "Title": data["title"],
+                "Summary": extras["Summary"],
                 "SEO Score": score,
                 "SEO Grade": grade,
                 "Overall Score": score,
@@ -347,10 +344,6 @@ if process_btn:
             for ideal_col, ideal_val, actual_col, actual_val in pairs_reference:
                 row[ideal_col] = ideal_val
                 row[actual_col] = actual_val
-            row["Keyword Selected"] = extras["Keyword Selected"]
-            row["Keyword Count"] = extras["Keyword Count"]
-            row["Top Keywords (article)"] = extras["Top Keywords (article)"]
-            row["Summary"] = extras["Summary"]
             rows.append(row)
             progress.progress(int(i / len(urls) * 100))
         df = pd.DataFrame(rows)
