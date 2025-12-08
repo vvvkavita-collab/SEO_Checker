@@ -117,6 +117,7 @@ def extract_article(url):
 # SEO ANALYSIS FUNCTION
 # ----------------------------------------------------
 def seo_analysis_struct(data):
+
     title = data["title"]
     meta = data["meta"]
     article = data["article"]
@@ -145,7 +146,7 @@ def seo_analysis_struct(data):
         ("Alt Tags Ideal", "All images", "Alt Tags Actual", alt_with),
         ("Internal Links Ideal", "2-5", "Internal Links Actual", internal_links),
         ("External Links Ideal", "2-4", "External Links Actual", external_links),
-        ("Readability Ideal (avg words/sent)", "10-20", "Readability Actual (avg words/sent)", avg_wps)
+        ("Readability Ideal (avg words/sent)", "10-20", "Readability Actual", avg_wps)
     ]
 
     score = 0
@@ -201,11 +202,10 @@ def apply_excel_formatting(workbook_bytes):
                 cell.font = header_font
                 cell.fill = header_fill
 
-    # Column limit for URL, Title, Summary
-    for col_idx, col in enumerate(ws.columns, 1):
+    # Limit URL, Title, Summary columns to 20 chars width
+    for col in ws.columns:
         col_letter = col[0].column_letter
-        max_len = max(len(str(c.value)) for c in col if c.value)
-        ws.column_dimensions[col_letter].width = min(20, max_len + 2)
+        ws.column_dimensions[col_letter].width = 20
 
     out = BytesIO()
     wb.save(out)
@@ -229,10 +229,10 @@ def add_guideline_sheet(wb):
         ("Paragraph Count", "Total paragraphs", "8+", "Improves user experience & clarity"),
         ("Keyword Density", "Keyword % in article", "1-2%", "Prevents keyword stuffing"),
         ("Image Count", "Images in article", "3+", "Improves engagement"),
-        ("Alt Tags", "Image alternative text", "All", "Helps Google image SEO"),
-        ("Internal Links", "Links within website", "2-5", "Helps site structure"),
-        ("External Links", "Useful outside links", "2-4", "Improves credibility"),
-        ("Readability", "Words per sentence", "10-20", "Easy to read content ranks higher"),
+        ("Alt Tags", "Image alt text", "All", "Helps Google image SEO"),
+        ("Internal Links", "Website internal links", "2-5", "Helps site structure"),
+        ("External Links", "Outside links", "2-4", "Improves credibility"),
+        ("Readability", "Words per sentence", "10-20", "Easy to read = better ranking")
     ]
 
     for row in guidelines:
@@ -243,47 +243,94 @@ def add_guideline_sheet(wb):
 
 
 # ----------------------------------------------------
-# STREAMLIT PREMIUM UI
+# PREMIUM STREAMLIT UI
 # ----------------------------------------------------
 st.markdown("""
-    <style>
-        body {
-            background: linear-gradient(135deg, #1F1C2C, #928DAB);
-        }
-        .main {
-            background: #ffffffdd;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0px 4px 20px rgba(0,0,0,0.3);
-        }
-        textarea, .stTextInput, .stFileUploader {
-            border-radius: 10px !important;
-            border: 2px solid #4F81BD !important;
-            background: #F4F6FA !important;
-        }
-    </style>
+<style>
+
+.stApp {
+    background: linear-gradient(135deg, #0f2027, #203a43, #2c5364) !important;
+    background-attachment: fixed !important;
+}
+
+/* Glass Box */
+.main-block {
+    background: rgba(255, 255, 255, 0.18);
+    padding: 35px;
+    border-radius: 18px;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.4);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    margin-top: 20px;
+    margin-bottom: 20px;
+}
+
+/* Stylish Inputs */
+textarea, input, .stTextInput, .stTextArea, .stFileUploader {
+    background: rgba(255,255,255,0.65) !important;
+    border-radius: 12px !important;
+    padding: 10px !important;
+    border: 1px solid #d0d4dc !important;
+    box-shadow: inset 0px 1px 6px rgba(0,0,0,0.15);
+}
+
+/* Beautiful Headings */
+h1 {
+    text-align: center;
+    color: #ffffff !important;
+    font-weight: 900 !important;
+    margin-bottom: 5px;
+    text-shadow: 1px 1px 4px #000000;
+}
+
+h2, h3, h4 {
+    color: #ffffff !important;
+    text-shadow: 0px 0px 3px #000;
+}
+
+/* Premium Buttons */
+.stButton button {
+    background: #4F81BD !important;
+    color: white !important;
+    border-radius: 12px !important;
+    padding: 10px 25px !important;
+    font-size: 18px !important;
+    border: none !important;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+    font-weight: 600 !important;
+    transition: 0.2s ease-in-out;
+}
+
+.stButton button:hover {
+    transform: scale(1.04);
+    background: #3a6595 !important;
+}
+
+</style>
 """, unsafe_allow_html=True)
 
 
-st.title("🚀 Advanced SEO Auditor – Premium UI")
-st.subheader("Analyze multiple URLs and generate a professional SEO audit Excel with guidelines sheet")
+st.markdown('<div class="main-block">', unsafe_allow_html=True)
 
+st.title("🚀 Advanced SEO Auditor – Premium UI")
+st.subheader("Analyze URLs & download a complete SEO audit Excel with guidelines")
 
 uploaded = st.file_uploader("Upload URL File (txt/csv/xlsx)", type=["txt", "csv", "xlsx"])
-urls_input = st.text_area("Paste URLs here (one per line)", height=200)
+urls_input = st.text_area("Paste URLs here (ONE PER LINE)", height=200)
 
-
-# ----------------------------------------------------
-# PROCESSING
-# ----------------------------------------------------
 process_btn = st.button("Process & Create Excel")
 
+
+# ----------------------------------------------------
+# PROCESS LOGIC
+# ----------------------------------------------------
 if process_btn:
     raw = urls_input.strip()
 
     if not raw:
-        st.error("No URLs entered")
+        st.error("Please enter URLs first.")
     else:
+
         urls = [u.strip() for u in raw.splitlines() if u.strip()]
         rows = []
         pairs_reference = None
@@ -332,11 +379,13 @@ if process_btn:
 
         final_bytes = apply_excel_formatting(final_out.getvalue())
 
-        st.success("Excel created successfully with Guidelines Sheet")
+        st.success("Excel created successfully with SEO Guidelines sheet!")
 
         st.download_button(
-            "Download Complete SEO Audit",
+            "⬇ Download SEO Audit Excel",
             data=final_bytes,
             file_name="SEO_Audit_Final.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+st.markdown('</div>', unsafe_allow_html=True)
