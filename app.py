@@ -9,44 +9,50 @@ from openpyxl import load_workbook, Workbook
 from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
 
 # ----------------------------------------------------
-# PREMIUM UI CSS (FIXED)
+# PREMIUM UI CSS — DARK MODE / NO WHITE CARD
 # ----------------------------------------------------
 st.markdown("""
 <style>
-
 html, body, [data-testid="stAppViewContainer"] {
     background: linear-gradient(135deg, #141E30, #243B55) !important;
-    height: 100%;
+    color: white !important;
 }
 
-/* Main White Card */
+/* Remove Main Card Background */
 [data-testid="stAppViewContainer"] > .main {
-    background: #ffffffdd !important;
+    background: transparent !important;
     padding: 30px;
-    border-radius: 18px;
-    margin: 30px;
-    box-shadow: 0px 4px 30px rgba(0,0,0,0.4);
+    border-radius: 0px;
+    margin: 0px;
+    box-shadow: none;
 }
 
-/* Left Sidebar Background */
+/* Sidebar */
 [data-testid="stSidebar"] {
     background: linear-gradient(180deg, #0F2027, #203A43, #2C5364);
     color: white !important;
 }
 
+/* Headings and text */
+h1, h2, h3, h4, h5, h6, p, span, div {
+    color: white !important;
+}
+
 /* Inputs */
 .stTextArea textarea, .stTextInput input {
-    background: #F5F7FA !important;
+    background: #1e2a3b !important;
     border: 2px solid #4F81BD !important;
     border-radius: 12px !important;
+    color: white !important;
 }
 
 /* File uploader */
 [data-testid="stFileUploader"] {
-    background: #F5F7FA !important;
+    background: #1e2a3b !important;
     padding: 15px;
     border-radius: 12px;
     border: 2px dashed #4F81BD;
+    color: white !important;
 }
 
 /* Buttons */
@@ -62,30 +68,8 @@ html, body, [data-testid="stAppViewContainer"] {
 .stButton>button:hover {
     background: #3A6EA5 !important;
 }
-
 </style>
 """, unsafe_allow_html=True)
-
-
-# ----------------------------------------------------
-# ⭐ HEADING COLOR FIX (NEW CODE)
-# ----------------------------------------------------
-st.markdown("""
-<style>
-h1, .stTitle {
-    color: #ffffff !important;
-    font-weight: 900 !important;
-    text-shadow: 0px 0px 12px rgba(0,0,0,0.6);
-}
-
-h2, .stSubheader {
-    color: #dfe6e9 !important;
-    font-weight: 600 !important;
-    text-shadow: 0px 0px 10px rgba(0,0,0,0.5);
-}
-</style>
-""", unsafe_allow_html=True)
-
 
 # ----------------------------------------------------
 # SAFE GET TEXT
@@ -96,7 +80,6 @@ def safe_get_text(tag):
     except:
         return ""
 
-
 # ----------------------------------------------------
 # ARTICLE EXTRACTOR
 # ----------------------------------------------------
@@ -105,34 +88,26 @@ def extract_article(url):
         headers = {"User-Agent": "Mozilla/5.0"}
         r = requests.get(url, headers=headers, timeout=15)
         r.raise_for_status()
-
         soup = BeautifulSoup(r.text, "html.parser")
-
         title = soup.title.string.strip() if soup.title and soup.title.string else ""
-
         meta_desc = ""
         md = soup.find("meta", attrs={"name": "description"}) or soup.find(
             "meta", attrs={"property": "og:description"}
         )
         if md and md.get("content"):
             meta_desc = md.get("content").strip()
-
         paras = soup.find_all("p")
         article = " ".join([safe_get_text(p) for p in paras]).strip()
         article = re.sub(r"\s+", " ", article)
-
         h1 = [safe_get_text(t) for t in soup.find_all("h1")]
         h2 = [safe_get_text(t) for t in soup.find_all("h2")]
-
         imgs = soup.find_all("img")
         img_count = len(imgs)
         alt_with = sum(1 for im in imgs if (im.get("alt") or "").strip())
-
         anchors = soup.find_all("a")
         internal_links = 0
         external_links = 0
         domain = urlparse(url).netloc.lower()
-
         for a in anchors:
             href = a.get("href") or ""
             if href.startswith("#") or href.startswith("mailto:") or href.strip() == "":
@@ -142,22 +117,17 @@ def extract_article(url):
                 external_links += 1
             else:
                 internal_links += 1
-
         paragraph_count = len([p for p in paras if safe_get_text(p)])
         sentences = re.split(r"[.!?]\s+", article)
         sentence_count = len([s for s in sentences if s.strip()])
-
         words = article.split()
         word_count = len(words)
-
         avg_words_per_sentence = round(word_count / max(1, sentence_count), 2)
-
         summary = ""
         if sentence_count >= 1:
             summary = ". ".join(sentence.strip() for sentence in sentences[:2]).strip()
             if summary and not summary.endswith("."):
                 summary += "."
-
         return {
             "title": title[:20],
             "meta": meta_desc,
@@ -174,7 +144,6 @@ def extract_article(url):
             "avg_words_per_sentence": avg_words_per_sentence,
             "summary": summary[:20],
         }
-
     except:
         return {
             "title": "",
@@ -192,6 +161,11 @@ def extract_article(url):
             "avg_words_per_sentence": 0,
             "summary": "",
         }
+
+# ----------------------------------------------------
+# (Rest of your SEO analysis, Excel formatting, and Streamlit code)
+# remains the same
+# ----------------------------------------------------
 
 
 # ----------------------------------------------------
@@ -443,3 +417,4 @@ if st.button("Process & Create Excel"):
             file_name="SEO_Audit_Final.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
