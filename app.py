@@ -5,194 +5,216 @@ from bs4 import BeautifulSoup
 import re
 from urllib.parse import urlparse
 from io import BytesIO
-from openpyxl import Workbook
+from openpyxl import load_workbook, Workbook
 from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
 
-# ----------------------- Streamlit Page Config -----------------------
+# ----------------------------------------------------
+# PAGE CONFIG — GitHub ribbon + menu removed
+# ----------------------------------------------------
 st.set_page_config(
-    page_title="SEO Checker",
-    page_icon="📊",
-    layout="wide"
+    page_title="Advanced SEO Auditor",
+    layout="wide",
+    initial_sidebar_state="auto",
+    menu_items={
+        "Get Help": None,
+        "Report a bug": None,
+        "About": None
+    }
 )
 
-# Custom CSS for design
+# ----------------------------------------------------
+# PREMIUM UI CSS — Responsive Mobile Fix + Hide Footer
+# ----------------------------------------------------
 st.markdown("""
-    <style>
-    body {
-        background: linear-gradient(135deg, #a1c4fd, #c2e9fb);
-        color: white;
-        font-family: 'Arial', sans-serif;
+<style>
+header[data-testid="stHeader"] {visibility: hidden;}
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+[data-testid="stDecoration"] {display: none !important;}
+
+html, body, [data-testid="stAppViewContainer"] {
+    background: linear-gradient(135deg, #141E30, #243B55) !important;
+    color: white !important;
+    overflow-x: hidden;
+}
+
+@media (max-width: 768px) {
+    h1 { font-size: 26px !important; text-align: center !important; }
+    h2 { font-size: 20px !important; text-align: center !important; }
+    p, label, span, div { font-size: 16px !important; }
+    .stTextArea textarea, .stTextInput input {
+        font-size: 15px !important;
+        padding: 10px !important;
     }
+    .stFileUploader { padding: 20px !important; }
     .stButton>button {
-        background-color: #0072b1;
-        color: white;
-        font-weight: bold;
+        width: 100% !important;
+        font-size: 18px !important;
+        padding: 14px !important;
     }
-    .stTextInput>div>input {
-        color: black;
-    }
-    .stFileUploader>div>input {
-        background-color: white;
-        color: black;
-    }
-    .dataframe tbody tr th, .dataframe tbody tr td {
-        color: black;
-    }
-    </style>
+}
+
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0F2027, #203A43, #2C5364);
+    color: white !important;
+}
+h1, h2, h3, h4, h5, h6, p, span, div, label {
+    color: white !important;
+}
+.stTextArea textarea, .stTextInput input {
+    background: #1e2a3b !important;
+    border: 2px solid #4F81BD !important;
+    border-radius: 12px !important;
+    color: white !important;
+}
+.stFileUploader {
+    background: #1e2a3b !important;
+    color: white !important;
+    border: 2px dashed #4F81BD !important;
+    border-radius: 12px !important;
+    padding: 15px;
+}
+.stButton>button {
+    background: #4F81BD !important;
+    color: white !important;
+    border-radius: 10px;
+    padding: 10px 20px;
+    font-size: 18px;
+    border: none;
+    box-shadow: 0px 4px 10px rgba(79,129,189,0.5);
+}
+.stButton>button:hover {
+    background: #3A6EA5 !important;
+}
+</style>
 """, unsafe_allow_html=True)
 
-st.title("📊 SEO Checker")
-st.write("Paste URLs below (one per line) to analyze their SEO metrics:")
+# ----------------------------------------------------
+# SAFE GET TEXT
+# ----------------------------------------------------
+def safe_get_text(tag):
+    try:
+        return tag.get_text(" ", strip=True)
+    except:
+        return ""
 
-# ----------------------- Input URLs -----------------------
-urls_input = st.text_area("Enter URLs", height=150)
-urls_list = [u.strip() for u in urls_input.split("\n") if u.strip()]
-
-# ----------------------- SEO Helper Functions -----------------------
-def get_soup(url):
+# ----------------------------------------------------
+# ARTICLE EXTRACTOR
+# ----------------------------------------------------
+def extract_article(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=10)
-        return BeautifulSoup(r.text, "html.parser")
-    except:
-        return None
+        r = requests.get(url, headers=headers, timeout=15)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
 
-def seo_analysis(url):
-    soup = get_soup(url)
-    if not soup:
-        return {
-            "URL": url,
-            "Title": "",
-            "Summary": "",
-            "SEO Score": 0,
-            "SEO Grade": "",
-            "Predicted Public Rating": "",
-            "Title Length Ideal": 60,
-            "Title Length Actual": 0,
-            "Meta Length Ideal": 160,
-            "Meta Length Actual": 0,
-            "H1 Count Ideal": 1,
-            "H1 Count Actual": 0,
-            "H2 Count Ideal": 2,
-            "H2 Count Actual": 0,
-            "Content Length Ideal": 300,
-            "Content Length Actual": 0,
-            "Paragraph Count Ideal": 3,
-            "Paragraph Count Actual": 0,
-            "Keyword Density Ideal": 2,
-            "Keyword Density Actual": 0,
-            "Image Count Ideal": 2,
-            "Image Count Actual": 0
-        }
+        title = soup.title.string.strip() if soup.title and soup.title.string else ""
 
-    # Title
-    title_tag = soup.title.string if soup.title else ""
-    title_length = len(title_tag)
-
-    # Meta Description
-    meta_tag = soup.find("meta", attrs={"name":"description"})
-    meta_content = meta_tag['content'] if meta_tag else ""
-    meta_length = len(meta_content)
-
-    # H1 & H2 count
-    h1_count = len(soup.find_all("h1"))
-    h2_count = len(soup.find_all("h2"))
-
-    # Paragraphs & content length
-    paragraphs = soup.find_all("p")
-    para_count = len(paragraphs)
-    content_length = sum(len(p.get_text()) for p in paragraphs)
-
-    # Keyword density (simple approach using first 3 words of title)
-    keywords = title_tag.split()[:3]
-    text = soup.get_text().lower()
-    keyword_density = round(sum(text.count(k.lower()) for k in keywords)/max(1,len(text.split()))*100, 2)
-
-    # Image count
-    img_count = len(soup.find_all("img"))
-
-    # SEO score (simple heuristic)
-    score = 0
-    if 50 <= title_length <= 70: score += 15
-    if 50 <= meta_length <= 160: score += 15
-    if h1_count == 1: score += 15
-    if h2_count >= 1: score += 10
-    if content_length >= 300: score += 20
-    if keyword_density >= 1: score += 10
-    if img_count >= 1: score += 15
-
-    # SEO Grade
-    grade = "A" if score >= 80 else "B" if score >= 60 else "C" if score >=40 else "D"
-
-    # Summary (first 20 words)
-    summary = ' '.join(meta_content.split()[:20])
-
-    return {
-        "URL": url,
-        "Title": title_tag[:20],
-        "Summary": summary,
-        "SEO Score": score,
-        "SEO Grade": grade,
-        "Predicted Public Rating": "",
-        "Title Length Ideal": 60,
-        "Title Length Actual": title_length,
-        "Meta Length Ideal": 160,
-        "Meta Length Actual": meta_length,
-        "H1 Count Ideal": 1,
-        "H1 Count Actual": h1_count,
-        "H2 Count Ideal": 2,
-        "H2 Count Actual": h2_count,
-        "Content Length Ideal": 300,
-        "Content Length Actual": content_length,
-        "Paragraph Count Ideal": 3,
-        "Paragraph Count Actual": para_count,
-        "Keyword Density Ideal": 2,
-        "Keyword Density Actual": keyword_density,
-        "Image Count Ideal": 2,
-        "Image Count Actual": img_count
-    }
-
-# ----------------------- Analyze Button -----------------------
-if st.button("Analyze URLs"):
-    if not urls_list:
-        st.warning("Please enter at least one URL!")
-    else:
-        results = []
-        for u in urls_list:
-            results.append(seo_analysis(u))
-        df = pd.DataFrame(results)
-        st.dataframe(df, height=400)
-
-        # ----------------------- Excel Download -----------------------
-        buffer = BytesIO()
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "SEO Report"
-
-        # Add headers
-        headers = list(df.columns)
-        ws.append(headers)
-
-        # Add data
-        for row in df.values.tolist():
-            ws.append(row)
-
-        # Styles
-        for col in ws.iter_cols(min_row=1, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
-            for cell in col:
-                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-                cell.border = Border(left=Side(style='thin', color='B0C4DE'),
-                                     right=Side(style='thin', color='B0C4DE'),
-                                     top=Side(style='thin', color='B0C4DE'),
-                                     bottom=Side(style='thin', color='B0C4DE'))
-                if cell.row == 1:
-                    cell.fill = PatternFill("solid", fgColor="87CEEB")
-                    cell.font = Font(bold=True)
-
-        wb.save(buffer)
-        st.download_button(
-            label="📥 Download SEO Report",
-            data=buffer,
-            file_name="SEO_Report.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        meta_desc = ""
+        md = soup.find("meta", attrs={"name": "description"}) or soup.find(
+            "meta", attrs={"property": "og:description"}
         )
+        if md and md.get("content"):
+            meta_desc = md.get("content").strip()
+
+        paras = soup.find_all("p")
+        article = ".".join([safe_get_text(p) for p in paras]).strip()
+        article = re.sub(r"\s+", " ", article)
+
+        h1 = [safe_get_text(t) for t in soup.find_all("h1")]
+        h2 = [safe_get_text(t) for t in soup.find_all("h2")]
+
+        imgs = soup.find_all("img")
+        img_count = len(imgs)
+        alt_with = sum(1 for im in imgs if (im.get("alt") or "").strip())
+
+        anchors = soup.find_all("a")
+        internal_links = 0
+        external_links = 0
+        domain = urlparse(url).netloc.lower()
+        for a in anchors:
+            href = a.get("href") or ""
+            if href.startswith("#") or href.startswith("mailto:") or href.strip() == "":
+                continue
+            parsed = urlparse(href)
+            if parsed.netloc and parsed.netloc.lower() != domain:
+                external_links += 1
+            else:
+                internal_links += 1
+
+        paragraph_count = len([p for p in paras if safe_get_text(p)])
+        sentences = re.split(r"[.!?]\s+", article)
+        sentence_count = len([s for s in sentences if s.strip()])
+        words = article.split()
+        word_count = len(words)
+        avg_words_per_sentence = round(word_count / max(1, sentence_count), 2)
+
+        summary = ""
+        if sentence_count >= 1:
+            summary = ". ".join(sentence.strip() for sentence in sentences[:2]).strip()
+            if summary and not summary.endswith("."):
+                summary += "."
+
+        return {
+            "title": title,
+            "meta": meta_desc,
+            "article": article,
+            "h1": h1,
+            "h2": h2,
+            "img_count": img_count,
+            "alt_with": alt_with,
+            "internal_links": internal_links,
+            "external_links": external_links,
+            "paragraph_count": paragraph_count,
+            "sentence_count": sentence_count,
+            "word_count": word_count,
+            "avg_words_per_sentence": avg_words_per_sentence,
+            "summary": summary[:20],  # truncate summary to 20 chars
+        }
+    except:
+        return {k: "" for k in [
+            "title","meta","article","h1","h2","img_count","alt_with","internal_links",
+            "external_links","paragraph_count","sentence_count","word_count",
+            "avg_words_per_sentence","summary"
+        ]}
+
+# ----------------------------------------------------
+# SEO ANALYSIS — Human-friendly Ideal ranges
+# ----------------------------------------------------
+def seo_analysis_struct(data):
+    title = data["title"]
+    meta = data["meta"]
+    word_count = data["word_count"]
+    paragraph_count = data["paragraph_count"]
+    img_count = data["img_count"]
+    alt_with = data["alt_with"]
+    h1_count = len(data["h1"])
+    h2_count = len(data["h2"])
+    internal_links = data["internal_links"]
+    external_links = data["external_links"]
+    avg_wps = data["avg_words_per_sentence"]
+
+    keyword_density = 0
+
+    pairs = [
+        ("Title Length Ideal", "50–60 chars (best for CTR)", "Title Length Actual", len(title)),
+        ("Meta Length Ideal", "150–160 chars (Google snippet)", "Meta Length Actual", len(meta)),
+        ("H1 Count Ideal", "Exactly 1 (main headline)", "H1 Count Actual", h1_count),
+        ("H2 Count Ideal", "2–5 (subheadings for clarity)", "H2 Count Actual", h2_count),
+        ("Content Length Ideal", "600+ words (depth of content)", "Content Length Actual", word_count),
+        ("Paragraph Count Ideal", "8+ (readability)", "Paragraph Count Actual", paragraph_count),
+        ("Keyword Density Ideal", "1–2% (avoid stuffing)", "Keyword Density Actual", keyword_density),
+        ("Image Count Ideal", "3+ (engagement)", "Image Count Actual", img_count),
+        ("Alt Tags Ideal", "All images should have alt text", "Alt Tags Actual", alt_with),
+        ("Internal Links Ideal", "2–5 (site navigation)", "Internal Links Actual", internal_links),
+        ("External Links Ideal", "2–4 (credibility)", "External Links Actual", external_links),
+        ("Readability Ideal", "10–20 words/sentence", "Readability Actual", avg_wps),
+    ]
+
+    score = 0
+    if 50 <= len(title) <= 60: score += 10
+    if 150 <= len(meta) <= 160: score += 10
+    if h1_count == 1: score += 8
+    if 2 <= h2_count <= 5: score += 6
+    if word_count >= 600: score += 12
+    if paragraph_count >= 8: score += 
