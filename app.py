@@ -18,6 +18,7 @@ st.markdown("""
 header[data-testid="stHeader"] {visibility: hidden;}
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
+[data-testid="stFooter"] {display: none !important;}
 [data-testid="stDecoration"] {display: none !important;}
 [data-testid="stToolbar"] {display: none !important;}
 .viewerBadge_container__1QSob, .viewerBadge_link__1S137 {display: none !important;}
@@ -211,28 +212,17 @@ def seo_analysis_struct(data):
 
     # Scoring
     score = 0
-    if 50 <= len(title) <= 60:
-        score += 10
-    if 150 <= len(meta) <= 160:
-        score += 10
-    if h1_count == 1:
-        score += 8
-    if 2 <= h2_count <= 5:
-        score += 6
-    if word_count >= 600:
-        score += 12
-    if paragraph_count >= 8:
-        score += 6
-    if img_count >= 3:
-        score += 8
-    if img_count > 0 and alt_with == img_count:
-        score += 6
-    if 2 <= internal_links <= 5:
-        score += 4
-    if 2 <= external_links <= 4:
-        score += 4
-    if 10 <= avg_wps <= 20:
-        score += 8
+    if 50 <= len(title) <= 60: score += 10
+    if 150 <= len(meta) <= 160: score += 10
+    if h1_count == 1: score += 8
+    if 2 <= h2_count <= 5: score += 6
+    if word_count >= 600: score += 12
+    if paragraph_count >= 8: score += 6
+    if img_count >= 3: score += 8
+    if img_count > 0 and alt_with == img_count: score += 6
+    if 2 <= internal_links <= 5: score += 4
+    if 2 <= external_links <= 4: score += 4
+    if 10 <= avg_wps <= 20: score += 8
 
     score = min(score, 100)
     grade = "A+" if score >= 90 else "A" if score >= 80 else "B" if score >= 65 else "C" if score >= 50 else "D"
