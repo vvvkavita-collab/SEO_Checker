@@ -8,105 +8,16 @@ from io import BytesIO
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
 
-# ----------------------------------------------------
-# PAGE CONFIG — hide menu, GitHub, and footer ribbons
-# ----------------------------------------------------
-st.set_page_config(
-    page_title="Advanced SEO Auditor",
-    layout="wide",
-    initial_sidebar_state="auto",
-    menu_items={
-        "Get Help": None,
-        "Report a bug": None,
-        "About": None
-    }
-)
+st.set_page_config(page_title="Advanced SEO Auditor", layout="wide")
 
-# ----------------------------------------------------
-# PREMIUM UI CSS — responsive + hide deployed banners
-# ----------------------------------------------------
-st.markdown("""
-<style>
-/* Hide Streamlit default header/menu/footer */
-header[data-testid="stHeader"] {visibility: hidden;}
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-[data-testid="stDecoration"] {display: none !important;}
-
-/* Base styling */
-html, body, [data-testid="stAppViewContainer"] {
-    background: linear-gradient(135deg, #141E30, #243B55) !important;
-    color: white !important;
-    overflow-x: hidden;
-}
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0F2027, #203A43, #2C5364);
-    color: white !important;
-}
-h1, h2, h3, h4, h5, h6, p, span, div, label {
-    color: white !important;
-}
-
-/* Inputs */
-.stTextArea textarea, .stTextInput input {
-    background: #1e2a3b !important;
-    border: 2px solid #4F81BD !important;
-    border-radius: 12px !important;
-    color: white !important;
-}
-.stFileUploader {
-    background: #1e2a3b !important;
-    color: white !important;
-    border: 2px dashed #4F81BD !important;
-    border-radius: 12px !important;
-    padding: 15px;
-}
-
-/* Buttons */
-.stButton>button {
-    background: #4F81BD !important;
-    color: white !important;
-    border-radius: 10px;
-    padding: 10px 20px;
-    font-size: 18px;
-    border: none;
-    box-shadow: 0px 4px 10px rgba(79,129,189,0.5);
-}
-.stButton>button:hover {
-    background: #3A6EA5 !important;
-}
-
-/* Mobile responsiveness */
-@media (max-width: 768px) {
-    h1 { font-size: 26px !important; text-align: center !important; }
-    h2 { font-size: 20px !important; text-align: center !important; }
-    p, label, span, div { font-size: 16px !important; }
-    .stTextArea textarea, .stTextInput input {
-        font-size: 15px !important;
-        padding: 10px !important;
-    }
-    .stFileUploader { padding: 20px !important; }
-    .stButton>button {
-        width: 100% !important;
-        font-size: 18px !important;
-        padding: 14px !important;
-    }
-}
-</style>
-""", unsafe_allow_html=True)
-
-# ----------------------------------------------------
-# SAFE GET TEXT
-# ----------------------------------------------------
+# ---------------- SAFE GET TEXT ----------------
 def safe_get_text(tag):
     try:
         return tag.get_text(" ", strip=True)
-    except Exception:
+    except:
         return ""
 
-# ----------------------------------------------------
-# ARTICLE EXTRACTOR
-# ----------------------------------------------------
+# ---------------- ARTICLE EXTRACTOR ----------------
 def extract_article(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -115,11 +26,8 @@ def extract_article(url):
         soup = BeautifulSoup(r.text, "html.parser")
 
         title = soup.title.string.strip() if soup.title and soup.title.string else ""
-
         meta_desc = ""
-        md = soup.find("meta", attrs={"name": "description"}) or soup.find(
-            "meta", attrs={"property": "og:description"}
-        )
+        md = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", attrs={"property": "og:description"})
         if md and md.get("content"):
             meta_desc = md.get("content").strip()
 
@@ -164,7 +72,6 @@ def extract_article(url):
         return {
             "title": title,
             "meta": meta_desc,
-            "article": article,
             "h1": h1,
             "h2": h2,
             "img_count": img_count,
@@ -172,33 +79,36 @@ def extract_article(url):
             "internal_links": internal_links,
             "external_links": external_links,
             "paragraph_count": paragraph_count,
-            "sentence_count": sentence_count,
             "word_count": word_count,
             "avg_words_per_sentence": avg_words_per_sentence,
-            "summary": summary[:20],  # enforce max 20 chars
+            "summary": summary[:20],
         }
-    except Exception:
-        return {
-            "title": "",
-            "meta": "",
-            "article": "",
-            "h1": [],
-            "h2": [],
-            "img_count": 0,
-            "alt_with": 0,
-            "internal_links": 0,
-            "external_links": 0,
-            "paragraph_count": 0,
-            "sentence_count": 0,
-            "word_count": 0,
-            "avg_words_per_sentence": 0,
-            "summary": "",
-        }
+    except:
+        return {k: "" for k in [
+            "title","meta","h1","h2","img_count","alt_with","internal_links",
+            "external_links","paragraph_count","word_count","avg_words_per_sentence","summary"
+        ]}
 
-# ----------------------------------------------------
-# SEO ANALYSIS — human-friendly Ideal ranges
-# (Keyword density & predicted rating removed)
-# ----------------------------------------------------
+# ---------------- VERDICT FUNCTION ----------------
+def verdict(actual, ideal_min=None, ideal_max=None, ideal_exact=None):
+    try:
+        val = float(actual)
+    except:
+        return "❌ Needs Fix"
+    if ideal_exact is not None:
+        return "✅ Good" if val == ideal_exact else "❌ Needs Fix"
+    if ideal_min is not None and ideal_max is not None:
+        if ideal_min <= val <= ideal_max:
+            return "✅ Good"
+        elif val > ideal_max:
+            return "⚠️ Excessive"
+        else:
+            return "❌ Needs Fix"
+    if ideal_min is not None:
+        return "✅ Good" if val >= ideal_min else "❌ Needs Fix"
+    return "❌ Needs Fix"
+
+# ---------------- SEO ANALYSIS ----------------
 def seo_analysis_struct(data):
     title = data["title"]
     meta = data["meta"]
@@ -213,142 +123,44 @@ def seo_analysis_struct(data):
     avg_wps = data["avg_words_per_sentence"]
 
     pairs = [
-        ("Title Length Ideal", "50–60 characters — readable headline, fits snippet, improves CTR", "Title Length Actual", len(title)),
-        ("Meta Length Ideal", "150–160 characters — Google snippet length, full message visible", "Meta Length Actual", len(meta)),
-        ("H1 Count Ideal", "Exactly 1 — clear main headline, avoids confusion", "H1 Count Actual", h1_count),
-        ("H2 Count Ideal", "2–5 — structured subheadings, improves readability", "H2 Count Actual", h2_count),
-        ("Content Length Ideal", "600+ words — depth of content, builds trust", "Content Length Actual", word_count),
-        ("Paragraph Count Ideal", "8+ — easy to read and scannable", "Paragraph Count Actual", paragraph_count),
-        ("Image Count Ideal", "3+ — visual engagement, breaks monotony", "Image Count Actual", img_count),
-        ("Alt Tags Ideal", "All images should have alt text — accessibility + SEO", "Alt Tags Actual", alt_with),
-        ("Internal Links Ideal", "2–5 — navigation, keeps user on site", "Internal Links Actual", internal_links),
-        ("External Links Ideal", "2–4 — credibility via trusted references", "External Links Actual", external_links),
-        ("Readability Ideal", "10–20 words/sentence — natural flow, easy comprehension", "Readability Actual", avg_wps),
+        ("Title Length Actual", len(title), verdict(len(title), 50, 60)),
+        ("Meta Length Actual", len(meta), verdict(len(meta), 150, 160)),
+        ("H1 Count Actual", h1_count, verdict(h1_count, ideal_exact=1)),
+        ("H2 Count Actual", h2_count, verdict(h2_count, 2, 5)),
+        ("Content Length Actual", word_count, verdict(word_count, 600)),
+        ("Paragraph Count Actual", paragraph_count, verdict(paragraph_count, 8)),
+        ("Image Count Actual", img_count, verdict(img_count, 3)),
+        ("Alt Tags Actual", alt_with, verdict(alt_with, ideal_exact=img_count)),
+        ("Internal Links Actual", internal_links, verdict(internal_links, 2, 5)),
+        ("External Links Actual", external_links, verdict(external_links, 2, 4)),
+        ("Readability Actual", avg_wps, verdict(avg_wps, 10, 20)),
     ]
 
-    # Scoring (strictly numeric metrics only)
     score = 0
-    if 50 <= len(title) <= 60:
-        score += 10
-    if 150 <= len(meta) <= 160:
-        score += 10
-    if h1_count == 1:
-        score += 8
-    if 2 <= h2_count <= 5:
-        score += 6
-    if word_count >= 600:
-        score += 12
-    if paragraph_count >= 8:
-        score += 6
-    if img_count >= 3:
-        score += 8
-    if img_count > 0 and alt_with == img_count:
-        score += 6
-    if 2 <= internal_links <= 5:
-        score += 4
-    if 2 <= external_links <= 4:
-        score += 4
-    if 10 <= avg_wps <= 20:
-        score += 8
+    if 50 <= len(title) <= 60: score += 10
+    if 150 <= len(meta) <= 160: score += 10
+    if h1_count == 1: score += 8
+    if 2 <= h2_count <= 5: score += 6
+    if word_count >= 600: score += 12
+    if paragraph_count >= 8: score += 6
+    if img_count >= 3: score += 8
+    if img_count > 0 and alt_with == img_count: score += 6
+    if 2 <= internal_links <= 5: score += 4
+    if 2 <= external_links <= 4: score += 4
+    if 10 <= avg_wps <= 20: score += 8
 
     score = min(score, 100)
     grade = "A+" if score >= 90 else "A" if score >= 80 else "B" if score >= 65 else "C" if score >= 50 else "D"
-    extras = {"Summary": (data["summary"] or "")[:20]}  # enforce 20 in output
-
+    extras = {"Summary": (data["summary"] or "")[:20]}
     return score, grade, pairs, extras
 
-# ----------------------------------------------------
-# EXCEL FORMATTER — style + red highlights + summary width
-# ----------------------------------------------------
-def apply_excel_formatting(workbook_bytes):
-    wb = load_workbook(BytesIO(workbook_bytes))
-    ws = wb["Audit"]
-
-    ws.sheet_view.showGridLines = False
-
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill("solid", fgColor="4F81BD")
-    red_fill = PatternFill("solid", fgColor="FF7F7F")
-    thin_border = Border(
-        left=Side(style="thin", color="4F81BD"),
-        right=Side(style="thin", color="4F81BD"),
-        top=Side(style="thin", color="4F81BD"),
-        bottom=Side(style="thin", color="4F81BD"),
-    )
-    center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
-
-    # Header style
-    for cell in ws[1]:
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.border = thin_border
-        cell.alignment = center_align
-
-    headers = [c.value for c in ws[1]]
-
-    def num(v):
-        try:
-            return float(v)
-        except Exception:
-            try:
-                return int(v)
-            except Exception:
-                return None
-
-    # Row styling and red highlights for failing Actuals
-    for row in ws.iter_rows(min_row=2):
-        lookup = {headers[i]: row[i] for i in range(len(headers))}
-
-        def val(h):
-            c = lookup.get(h)
-            return c.value if c else None
-
-        def mark_red(h, cond):
-            c = lookup.get(h)
-            if c and cond:
-                c.fill = red_fill
-
-        mark_red("Title Length Actual", not (50 <= (num(val("Title Length Actual")) or -1) <= 60))
-        mark_red("Meta Length Actual", not (150 <= (num(val("Meta Length Actual")) or -1) <= 160))
-        mark_red("H1 Count Actual", (num(val("H1 Count Actual")) or -1) != 1)
-        mark_red("H2 Count Actual", not (2 <= (num(val("H2 Count Actual")) or -1) <= 5))
-        mark_red("Content Length Actual", (num(val("Content Length Actual")) or -1) < 600)
-        mark_red("Paragraph Count Actual", (num(val("Paragraph Count Actual")) or -1) < 8)
-        mark_red("Image Count Actual", (num(val("Image Count Actual")) or -1) < 3)
-        img_actual = num(val("Image Count Actual")) or 0
-        alt_actual = num(val("Alt Tags Actual")) or 0
-        mark_red("Alt Tags Actual", alt_actual < img_actual)
-        mark_red("Internal Links Actual", not (2 <= (num(val("Internal Links Actual")) or -1) <= 5))
-        mark_red("External Links Actual", not (2 <= (num(val("External Links Actual")) or -1) <= 4))
-        mark_red("Readability Actual", not (10 <= (num(val("Readability Actual")) or -1) <= 20))
-
-        for cell in row:
-            cell.border = thin_border
-            cell.alignment = center_align
-
-    # Column widths — Summary fixed narrower
-    for col in ws.columns:
-        col_letter = col[0].column_letter
-        header_val = ws[f"{col_letter}1"].value
-        if header_val == "Summary":
-            ws.column_dimensions[col_letter].width = 20
-        else:
-            ws.column_dimensions[col_letter].width = 22
-
-    out = BytesIO()
-    wb.save(out)
-    return out.getvalue()
-
-# ----------------------------------------------------
-# UI
-# ----------------------------------------------------
+# ---------------- UI ----------------
 st.title("🚀 Advanced SEO Auditor – Premium Edition")
 st.subheader("URL Analysis → Excel Report → SEO Guidelines (Auto Generated)")
 
 uploaded = st.file_uploader("Upload URL List (TXT/CSV/XLSX)", type=["txt", "csv", "xlsx"])
 urls_input = st.text_area("Paste URLs here", height=200)
 
-# If file uploaded, merge into text area
 if uploaded is not None:
     try:
         if uploaded.type == "text/plain":
@@ -366,7 +178,7 @@ if uploaded is not None:
     except Exception as e:
         st.error(f"Failed to read uploaded file: {e}")
 
-process = st.button("Process & Create Excel")
+process = st.button("Process & Create Report")
 
 if process:
     if not urls_input.strip():
@@ -374,66 +186,6 @@ if process:
     else:
         urls = [u.strip() for u in urls_input.splitlines() if u.strip()]
         rows = []
-
         progress = st.progress(0)
         status = st.empty()
 
-        for i, url in enumerate(urls, start=1):
-            status.text(f"Processing {i}/{len(urls)} : {url}")
-            data = extract_article(url)
-            score, grade, pairs, extras = seo_analysis_struct(data)
-
-            # Build row per-URL (trimmed columns, no predicted rating, no keyword density)
-            row = {
-                "URL": url,
-                "Title": data["title"],
-                "Summary": extras["Summary"],
-                "SEO Score": score,
-                "SEO Grade": grade,
-            }
-
-            # Add Ideal/Actual pairs (human-friendly ideals)
-            for ideal_label, ideal_value, actual_label, actual_value in pairs:
-                row[ideal_label] = ideal_value
-                row[actual_label] = actual_value
-
-            rows.append(row)
-            progress.progress(int((i / len(urls)) * 100))
-
-        df = pd.DataFrame(rows)
-
-        # Build Excel (Audit + Guidelines)
-        out = BytesIO()
-        with pd.ExcelWriter(out, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name="Audit")
-
-            wb = writer.book
-            ws_g = wb.create_sheet("SEO Guidelines")
-            ws_g.append(["Parameter", "Meaning / Purpose", "Ideal Range", "Why Important"])
-            guidelines = [
-                ("Title Length", "Main headline", "50–60 chars", "CTR + Ranking"),
-                ("Meta Description", "Search snippet text", "150–160 chars", "CTR improvement"),
-                ("H1 Count", "Main heading", "1", "Topic clarity"),
-                ("H2 Count", "Subheadings", "2–5", "Readability + SEO"),
-                ("Content Length", "Total words", "600+", "Depth of content"),
-                ("Paragraph Count", "Sections", "8+", "User experience"),
-                ("Images", "Visuals", "3+", "Engagement"),
-                ("Alt Tags", "Image alt text", "All", "Image SEO"),
-                ("Internal Links", "Site links", "2–5", "Ranking"),
-                ("External Links", "Trusted links", "2–4", "Credibility"),
-                ("Readability", "Words/sentence", "10–20", "Better retention"),
-            ]
-            for r in guidelines:
-                ws_g.append(r)
-            for col in ws_g.columns:
-                ws_g.column_dimensions[col[0].column_letter].width = 25
-
-        final_bytes = apply_excel_formatting(out.getvalue())
-
-        st.success("🎉 Excel created successfully!")
-        st.download_button(
-            "Download SEO Audit Excel",
-            data=final_bytes,
-            file_name="SEO_Audit_Final.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
