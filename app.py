@@ -85,7 +85,7 @@ def safe_get_text(tag):
 def extract_article(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=15)
+        r = requests.get(url, headers=headers, timeout=20)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
@@ -195,18 +195,17 @@ def seo_analysis_struct(data):
     avg_wps = data["avg_words_per_sentence"]
 
     metrics = [
-        # (Actual Header, Actual Value, Ideal Header, Ideal Value, Verdict Header, Verdict)
-        ("Title Length Actual", len(title), "Title Length Ideal", "50–60 characters", "Title Verdict", verdict(len(title), 50, 60)),
-        ("Meta Length Actual", len(meta), "Meta Length Ideal", "150–160 characters", "Meta Verdict", verdict(len(meta), 150, 160)),
-        ("H1 Count Actual", h1_count, "H1 Count Ideal", "Exactly 1", "H1 Verdict", verdict(h1_count, ideal_exact=1)),
-        ("H2 Count Actual", h2_count, "H2 Count Ideal", "2–5", "H2 Verdict", verdict(h2_count, 2, 5)),
-        ("Content Length Actual", word_count, "Content Length Ideal", "600+ words", "Content Verdict", verdict(word_count, 600, None)),
-        ("Paragraph Count Actual", paragraph_count, "Paragraph Count Ideal", "8+ paragraphs", "Paragraph Verdict", verdict(paragraph_count, 8, None)),
-        ("Image Count Actual", img_count, "Image Count Ideal", "3+ images", "Image Verdict", verdict(img_count, 3, None)),
-        ("Alt Tags Actual", alt_with, "Alt Tags Ideal", "All images require alt text", "Alt Tags Verdict", verdict(alt_with, ideal_exact=img_count)),
-        ("Internal Links Actual", internal_links, "Internal Links Ideal", "2–5", "Internal Links Verdict", verdict(internal_links, 2, 5)),
-        ("External Links Actual", external_links, "External Links Ideal", "2–4", "External Links Verdict", verdict(external_links, 2, 4)),
-        ("Readability Actual", avg_wps, "Readability Ideal", "10–20 words/sentence", "Readability Verdict", verdict(avg_wps, 10, 20)),
+        ("Title Length Actual", len(title), "Title Length Ideal", "50–60 characters — readable, fits snippet, improves CTR", "Title Verdict", verdict(len(title), 50, 60)),
+        ("Meta Length Actual", len(meta), "Meta Length Ideal", "150–160 characters — full snippet, persuasive and scannable", "Meta Verdict", verdict(len(meta), 150, 160)),
+        ("H1 Count Actual", h1_count, "H1 Count Ideal", "Exactly 1 — clear main headline", "H1 Verdict", verdict(h1_count, ideal_exact=1)),
+        ("H2 Count Actual", h2_count, "H2 Count Ideal", "2–5 — structured subheadings for readability", "H2 Verdict", verdict(h2_count, 2, 5)),
+        ("Content Length Actual", word_count, "Content Length Ideal", "600+ words — depth and trust", "Content Verdict", verdict(word_count, 600, None)),
+        ("Paragraph Count Actual", paragraph_count, "Paragraph Count Ideal", "8+ paragraphs — scannable and easy to read", "Paragraph Verdict", verdict(paragraph_count, 8, None)),
+        ("Image Count Actual", img_count, "Image Count Ideal", "3+ images — visual engagement", "Image Verdict", verdict(img_count, 3, None)),
+        ("Alt Tags Actual", alt_with, "Alt Tags Ideal", "All images have alt text — accessibility + SEO", "Alt Tags Verdict", verdict(alt_with, ideal_exact=img_count)),
+        ("Internal Links Actual", internal_links, "Internal Links Ideal", "2–5 — helpful navigation without clutter", "Internal Links Verdict", verdict(internal_links, 2, 5)),
+        ("External Links Actual", external_links, "External Links Ideal", "2–4 — credible references", "External Links Verdict", verdict(external_links, 2, 4)),
+        ("Readability Actual", avg_wps, "Readability Ideal", "10–20 words/sentence — natural flow", "Readability Verdict", verdict(avg_wps, 10, 20)),
     ]
 
     # Scoring
@@ -314,7 +313,7 @@ def apply_excel_formatting(workbook_bytes):
         elif header_val and "Verdict" in str(header_val):
             ws.column_dimensions[col_letter].width = 18
         elif header_val and "Ideal" in str(header_val):
-            ws.column_dimensions[col_letter].width = 24
+            ws.column_dimensions[col_letter].width = 30
         else:
             ws.column_dimensions[col_letter].width = 22
 
@@ -381,10 +380,62 @@ if process:
 
         df = pd.DataFrame(rows)
 
-        # Excel: single Audit sheet
+        # Excel: Audit + Column Definitions sheets
         out = BytesIO()
         with pd.ExcelWriter(out, engine="openpyxl") as writer:
             df.to_excel(writer, index=False, sheet_name="Audit")
+
+            # Column Definitions sheet
+            wb = writer.book
+            ws_def = wb.create_sheet("Column Definitions")
+            ws_def.append(["Column", "Meaning / Purpose", "Ideal (Human)", "How to Fix if Failing"])
+
+            definitions = [
+                ("URL", "Audited page address", "-", "Use live, accessible URLs"),
+                ("Summary", "First 1–2 sentences (20 chars) for quick glance", "-", "Improve intro clarity"),
+                ("SEO Score", "Aggregate score from metrics", "Higher is better", "Fix failing metrics below"),
+                ("SEO Grade", "Letter grade mapped to score", "A / A+", "Fix failing metrics below"),
+                ("Title Length Actual", "Characters in the page <title>", "50–60 characters", "Rewrite to be concise and punchy"),
+                ("Title Length Ideal", "Human-friendly ideal length", "50–60 characters — readable, fits snippet", "Keep key words at start"),
+                ("Title Verdict", "Human decision if title length is ideal", "✅ Good", "Shorten or extend to fit 50–60"),
+                ("Meta Length Actual", "Characters in meta description", "150–160 characters", "Write persuasive, complete summary"),
+                ("Meta Length Ideal", "Human-friendly ideal length", "150–160 — fits search snippet box", "Trim or expand copy"),
+                ("Meta Verdict", "Human decision if meta length is ideal", "✅ Good", "Ensure full message visible"),
+                ("H1 Count Actual", "Number of <h1> tags", "Exactly 1", "Keep only one main headline"),
+                ("H1 Count Ideal", "Human-friendly rule", "Exactly 1 — clarity", "Remove extra H1s"),
+                ("H1 Verdict", "Human decision if H1 count is correct", "✅ Good", "Fix structure in HTML"),
+                ("H2 Count Actual", "Number of <h2> tags", "2–5", "Add subheads for structure"),
+                ("H2 Count Ideal", "Human-friendly rule", "2–5 — readability", "Split long sections"),
+                ("H2 Verdict", "Human decision for H2", "✅ Good", "Adjust subheading count"),
+                ("Content Length Actual", "Total words in article", "600+ words", "Add depth, context, quotes, data"),
+                ("Content Length Ideal", "Human-friendly rule", "600+ — depth and trust", "Expand with relevant info"),
+                ("Content Verdict", "Human decision for content length", "✅ Good", "Strengthen content"),
+                ("Paragraph Count Actual", "Number of <p> tags", "8+ paragraphs", "Break text into shorter sections"),
+                ("Paragraph Count Ideal", "Human-friendly rule", "8+ — scannable", "Add subheads and short paras"),
+                ("Paragraph Verdict", "Human decision for paragraph count", "✅ Good", "Reformat for readability"),
+                ("Image Count Actual", "Number of <img> tags", "3+ images", "Add relevant images/graphics"),
+                ("Image Count Ideal", "Human-friendly rule", "3+ — engagement", "Use contextual visuals"),
+                ("Image Verdict", "Human decision for image count", "✅ Good", "Add/remove images appropriately"),
+                ("Alt Tags Actual", "Images that have alt text", "All images must have alt", "Write descriptive alt text"),
+                ("Alt Tags Ideal", "Human-friendly rule", "All images — accessibility + SEO", "Ensure each image has alt"),
+                ("Alt Tags Verdict", "Human decision for alt tags", "✅ Good", "Audit and add missing alt"),
+                ("Internal Links Actual", "Links to same-site pages", "2–5", "Link to relevant internal pages"),
+                ("Internal Links Ideal", "Human-friendly rule", "2–5 — helpful navigation", "Avoid overlinking"),
+                ("Internal Links Verdict", "Human decision for internal links", "✅ Good", "Prune excessive links"),
+                ("External Links Actual", "Links to trusted external pages", "2–4", "Cite credible sources"),
+                ("External Links Ideal", "Human-friendly rule", "2–4 — credibility", "Limit to strong references"),
+                ("External Links Verdict", "Human decision for external links", "✅ Good", "Remove weak references"),
+                ("Readability Actual", "Average words per sentence", "10–20", "Use punctuation, shorter sentences"),
+                ("Readability Ideal", "Human-friendly rule", "10–20 words/sentence — natural flow", "Fix run-on sentences"),
+                ("Readability Verdict", "Human decision for readability", "✅ Good", "Edit for clarity"),
+            ]
+
+            for row in definitions:
+                ws_def.append(row)
+
+            # Adjust widths for Column Definitions
+            for col in ws_def.columns:
+                ws_def.column_dimensions[col[0].column_letter].width = 30
 
         final_bytes = apply_excel_formatting(out.getvalue())
 
