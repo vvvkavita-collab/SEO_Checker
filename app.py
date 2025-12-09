@@ -14,11 +14,15 @@ st.set_page_config(page_title="Advanced SEO Auditor – Premium Edition", layout
 # ---------------- PREMIUM LAYOUT CSS ----------------
 st.markdown("""
 <style>
+/* Hide Streamlit chrome */
 header[data-testid="stHeader"] {visibility: hidden;}
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 [data-testid="stDecoration"] {display: none !important;}
+[data-testid="stToolbar"] {display: none !important;}
+.viewerBadge_container__1QSob, .viewerBadge_link__1S137 {display: none !important;}
 
+/* App background + text */
 html, body, [data-testid="stAppViewContainer"] {
     background: linear-gradient(135deg, #141E30, #243B55) !important;
     color: white !important;
@@ -28,15 +32,17 @@ html, body, [data-testid="stAppViewContainer"] {
     background: linear-gradient(180deg, #0F2027, #203A43, #2C5364);
     color: white !important;
 }
-h1, h2, h3, h4, h5, h6, p, span, div, label {
-    color: white !important;
-}
+h1, h2, h3, h4, h5, h6, p, span, div, label { color: white !important; }
+
+/* Inputs */
 .stTextArea textarea, .stTextInput input {
     background: #1e2a3b !important;
     border: 2px solid #4F81BD !important;
     border-radius: 12px !important;
     color: white !important;
 }
+
+/* File uploader */
 .stFileUploader {
     background: #1e2a3b !important;
     color: white !important;
@@ -44,6 +50,8 @@ h1, h2, h3, h4, h5, h6, p, span, div, label {
     border-radius: 12px !important;
     padding: 15px;
 }
+
+/* Buttons */
 .stButton>button {
     background: #4F81BD !important;
     color: white !important;
@@ -53,23 +61,16 @@ h1, h2, h3, h4, h5, h6, p, span, div, label {
     border: none;
     box-shadow: 0px 4px 10px rgba(79,129,189,0.5);
 }
-.stButton>button:hover {
-    background: #3A6EA5 !important;
-}
+.stButton>button:hover { background: #3A6EA5 !important; }
+
+/* Mobile */
 @media (max-width: 768px) {
     h1 { font-size: 26px !important; text-align: center !important; }
     h2 { font-size: 20px !important; text-align: center !important; }
     p, label, span, div { font-size: 16px !important; }
-    .stTextArea textarea, .stTextInput input {
-        font-size: 15px !important;
-        padding: 10px !important;
-    }
+    .stTextArea textarea, .stTextInput input { font-size: 15px !important; padding: 10px !important; }
     .stFileUploader { padding: 20px !important; }
-    .stButton>button {
-        width: 100% !important;
-        font-size: 18px !important;
-        padding: 14px !important;
-    }
+    .stButton>button { width: 100% !important; font-size: 18px !important; padding: 14px !important; }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -390,7 +391,6 @@ if process:
             ws_def = wb.create_sheet("Column Definitions")
             ws_def.append(["Ideal Column Heading", "Meaning (Kya hai)", "Why Important (Kyu zaruri)"])
 
-            # Definitions for only Ideal columns (human-friendly)
             ideal_definitions = [
                 ("Title Length Ideal", "Recommended title length", "Fits search snippet, readable headline, improves CTR"),
                 ("Meta Length Ideal", "Recommended meta description length", "Fits Google snippet, persuasive summary without truncation"),
@@ -408,7 +408,6 @@ if process:
             for row in ideal_definitions:
                 ws_def.append(row)
 
-            # Adjust widths for Column Definitions
             for col in ws_def.columns:
                 ws_def.column_dimensions[col[0].column_letter].width = 32
 
