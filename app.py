@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 import re
 from urllib.parse import urlparse
 from io import BytesIO
-from openpyxl import load_workbook, Workbook
+from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
 
 # ----------------------------------------------------
@@ -215,6 +215,3 @@ def seo_analysis_struct(data):
     if 50 <= len(title) <= 60: score += 10
     if 150 <= len(meta) <= 160: score += 10
     if h1_count == 1: score += 8
-    if 2 <= h2_count <= 5: score += 6
-    if word_count >= 600: score += 12
-    if paragraph_count >= 8: score += 
