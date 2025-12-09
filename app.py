@@ -14,11 +14,12 @@ st.set_page_config(page_title="Advanced SEO Auditor – Premium Edition", layout
 # ---------------- PREMIUM LAYOUT CSS ----------------
 st.markdown("""
 <style>
-/* Hide Streamlit chrome */
-header[data-testid="stHeader"] {visibility: hidden;}
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-[data-testid="stFooter"] {display: none !important;}
+/* Hide Streamlit chrome & any footer containers/badges/toolbars */
+header[data-testid="stHeader"] {visibility: hidden !important;}
+#MainMenu {visibility: hidden !important;}
+footer {display: none !important; visibility: hidden !important;}
+div[data-testid="stFooter"] {display: none !important; visibility: hidden !important;}
+section[data-testid="stSidebar"] ~ div [data-testid="stFooter"] {display: none !important;}
 [data-testid="stDecoration"] {display: none !important;}
 [data-testid="stToolbar"] {display: none !important;}
 .viewerBadge_container__1QSob, .viewerBadge_link__1S137 {display: none !important;}
@@ -83,29 +84,47 @@ def safe_get_text(tag):
     except Exception:
         return ""
 
+# ---------------- STRONG REQUEST HEADERS ----------------
+REQ_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Connection": "keep-alive",
+}
+
 # ---------------- ARTICLE EXTRACTOR ----------------
 def extract_article(url):
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=20)
+        # Ensure scheme
+        if not url.lower().startswith(("http://", "https://")):
+            url = "https://" + url.lstrip("/")
+        r = requests.get(url, headers=REQ_HEADERS, timeout=25, allow_redirects=True)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
+        # Title & meta
         title = soup.title.string.strip() if soup.title and soup.title.string else ""
         md = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", attrs={"property": "og:description"})
         meta_desc = md.get("content").strip() if md and md.get("content") else ""
 
+        # Text content
         paras = soup.find_all("p")
         article = ".".join([safe_get_text(p) for p in paras]).strip()
         article = re.sub(r"\s+", " ", article)
 
+        # Headings
         h1 = [safe_get_text(t) for t in soup.find_all("h1")]
         h2 = [safe_get_text(t) for t in soup.find_all("h2")]
 
+        # Images & alt
         imgs = soup.find_all("img")
         img_count = len(imgs)
         alt_with = sum(1 for im in imgs if (im.get("alt") or "").strip())
 
+        # Links
         anchors = soup.find_all("a")
         internal_links = 0
         external_links = 0
@@ -114,12 +133,13 @@ def extract_article(url):
             href = a.get("href") or ""
             if href.startswith("#") or href.startswith("mailto:") or href.strip() == "":
                 continue
-            parsed = urlparse(href)
+            parsed = urlparse(href if href.startswith(("http://", "https://")) else "https://" + domain + href)
             if parsed.netloc and parsed.netloc.lower() != domain:
                 external_links += 1
             else:
                 internal_links += 1
 
+        # Counts
         paragraph_count = len([p for p in paras if safe_get_text(p)])
         sentences = re.split(r"[.!?]\s+", article)
         sentence_count = len([s for s in sentences if s.strip()])
@@ -312,14 +332,17 @@ def apply_excel_formatting(workbook_bytes):
     wb.save(out)
     return out.getvalue()
 
-# ---------------- UI ----------------
+# ---------------- UI + STATE ----------------
 st.title("🚀 Advanced SEO Auditor – Premium Edition")
 st.subheader("URL Analysis → Excel Report → Actual vs Ideal + Human Verdicts")
 
-uploaded = st.file_uploader("Upload URL List (TXT/CSV/XLSX)", type=["txt", "csv", "xlsx"])
-urls_input = st.text_area("Paste URLs here", height=200)
+if "merged_urls" not in st.session_state:
+    st.session_state.merged_urls = ""
 
-# Merge uploaded into text area
+uploaded = st.file_uploader("Upload URL List (TXT/CSV/XLSX)", type=["txt", "csv", "xlsx"])
+urls_input = st.text_area("Paste URLs here", value=st.session_state.merged_urls, height=220)
+
+# Merge uploaded into session_state (reliable across reruns)
 if uploaded is not None:
     try:
         if uploaded.type == "text/plain":
@@ -333,7 +356,9 @@ if uploaded is not None:
             uploaded_urls = "\n".join(df_u.iloc[:, 0].astype(str).str.strip())
         st.info("File processed. Merged into the text area below.")
         existing = urls_input.strip()
-        urls_input = (existing + "\n" + uploaded_urls).strip() if existing else uploaded_urls
+        st.session_state.merged_urls = (existing + "\n" + uploaded_urls).strip() if existing else uploaded_urls
+        # Reflect immediately in the textarea
+        urls_input = st.session_state.merged_urls
     except Exception as e:
         st.error(f"Failed to read uploaded file: {e}")
 
@@ -343,14 +368,24 @@ if process:
     if not urls_input.strip():
         st.error("Please paste some URLs or upload a file.")
     else:
-        urls = [u.strip() for u in urls_input.splitlines() if u.strip()]
+        # Build clean URL list (remove duplicates while preserving order)
+        seen = set()
+        urls = []
+        for u in urls_input.splitlines():
+            u = u.strip()
+            if not u:
+                continue
+            if u not in seen:
+                seen.add(u)
+                urls.append(u)
+
         rows = []
         progress = st.progress(0)
         status = st.empty()
 
         for i, url in enumerate(urls, start=1):
             status.text(f"Processing {i}/{len(urls)} : {url}")
-            data = extract_article(url)
+            data = extract_article(url)  # Per‑URL fresh fetch with strong headers
             score, grade, metrics, extras = seo_analysis_struct(data)
 
             row = {
