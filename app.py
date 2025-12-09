@@ -1,200 +1,208 @@
+# Full Premium SEO Checker (Patrika) — with paste box + logo + password
 import streamlit as st
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-import re
 from urllib.parse import urlparse
 from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
+import os
 
-# ======================================
-#            PREMIUM UI CSS
-# ======================================
+# ------------------------
+# Config & Password
+# ------------------------
+st.set_page_config(page_title="Patrika Internal SEO Auditor – V1.0", layout="wide")
+PASSWORD = "Patrika@2025"   # recommended password (change if you want)
+
+def require_password():
+    st.markdown("<h3 style='color:#bfe9ff;'>🔒 Enter Password to continue</h3>", unsafe_allow_html=True)
+    pw = st.text_input("", type="password", key="pwd")
+    if pw != PASSWORD:
+        if pw:
+            st.error("Incorrect password")
+        st.stop()
+
+require_password()
+
+# ------------------------
+# PREMIUM CSS + Logo Placeholder
+# ------------------------
 st.markdown("""
 <style>
-
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
-
-html, body, [class*="css"]  {
-    font-family: 'Poppins', sans-serif;
-}
-
-/* Remove Streamlit defaults */
+html, body, [class*="css"]  { font-family: 'Poppins', sans-serif; }
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 header {visibility: hidden;}
+.stApp { background: linear-gradient(135deg, #071226, #102032); color: white !important; }
 
-/* App Background */
-.stApp {
-    background: linear-gradient(135deg, #0f0f0f, #1c1c1c);
-    color: white !important;
-}
+/* Heading glow */
+h1 { color: #87e0ff !important; text-shadow: 0 0 12px rgba(135,224,255,0.6); }
 
-/* Headings */
-h1, h2, h3, h4 {
-    color: #4FC3F7 !important;
-    text-shadow: 0px 0px 8px rgba(79,195,247,0.7);
-}
-
-/* Upload Box */
+/* Upload card */
 div[data-testid="stFileUploader"] {
-    background: #1a1f24 !important;
-    padding: 30px;
-    border-radius: 16px;
-    border: 1px solid #4FC3F7 !important;
-    box-shadow: 0px 4px 15px rgba(0, 150, 255, 0.3);
+  background: #0f1720 !important;
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid rgba(79,195,247,0.25) !important;
+  box-shadow: 0 8px 30px rgba(3,169,244,0.08);
 }
 
-/* Input fields */
-input, textarea {
-    background-color: #1f1f1f !important;
-    color: white !important;
-    border-radius: 10px !important;
-    border: 1px solid #4FC3F7 !important;
+/* Inputs */
+textarea, input, .stTextArea textarea {
+  background: #0b1420 !important;
+  color: #dbefff !important;
+  border: 1px solid rgba(79,195,247,0.18) !important;
 }
 
 /* Buttons */
 div.stButton > button {
-    background: linear-gradient(90deg, #0288D1, #03A9F4);
-    color: white !important;
-    border-radius: 10px;
-    padding: 12px 26px;
-    border: none;
-    font-size: 16px;
-    font-weight: 600;
-    box-shadow: 0 0 10px rgba(3,169,244,0.6);
+  background: linear-gradient(90deg,#0288D1,#03A9F4) !important;
+  color: white !important;
+  border-radius: 10px !important;
+  padding: 10px 18px !important;
+  font-weight: 600;
 }
-div.stButton > button:hover {
-    background: linear-gradient(90deg, #03A9F4, #4FC3F7);
-    box-shadow: 0 0 25px rgba(79,195,247,0.9);
-}
-
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- LOGO -------------
-st.markdown("""
-<div style='text-align:center; margin-bottom:30px;'>
-    <img src='https://i.ibb.co/Zm8Jr3r/logo.png' width='160'>
-</div>
-""", unsafe_allow_html=True)
+# ------------------------
+# Logo: try local file first, else fallback URL
+# ------------------------
+logo_local = "patrika_logo.png"   # put your logo file next to this script for reliable display
+logo_fallback = "https://upload.wikimedia.org/wikipedia/commons/9/98/Patrika_logo.png"  # fallback
 
-# -----------------------------------------
-#             APP TITLE
-# -----------------------------------------
-st.title("URL Analysis → SEO Report Generator (Premium)")
+if os.path.exists(logo_local):
+    st.image(logo_local, width=160)
+else:
+    # try to show fallback URL (may be blocked in some deployments)
+    st.image(logo_fallback, width=160)
 
-# -----------------------------------------
-#           FILE UPLOAD SECTION
-# -----------------------------------------
-uploaded_file = st.file_uploader("Upload URL List (TXT/CSV/XLSX)", type=["txt", "csv", "xlsx"])
+# ------------------------
+# App Title + subtitle
+# ------------------------
+st.markdown("<h1>URL Analysis → SEO Report Generator (Patrika)</h1>", unsafe_allow_html=True)
+st.markdown("<p style='color:#cfeeff;'>Paste multiple URLs or upload a TXT/CSV/XLSX list. Summary column removed — output contains URL & Title only.</p>", unsafe_allow_html=True)
 
-def limit_length(text, limit=20):
-    if not isinstance(text, str):
-        return text
-    return text[:limit] + "..." if len(text) > limit else text
+# ------------------------
+# Inputs: Paste box + File uploader (both visible)
+# ------------------------
+st.markdown("### Paste URLs (one URL per line)")
+urls_text = st.text_area("", height=160, placeholder="https://example.com/article-1\nhttps://example.com/article-2")
 
-# -----------------------------------------
-#           URL PROCESSING FUNCTION
-# -----------------------------------------
-def analyze_url(url):
+st.markdown("### Or upload a file (TXT / CSV / XLSX)")
+uploaded = st.file_uploader("", type=["txt","csv","xlsx"])
+
+# Helper to trim long strings to 20 chars with ellipsis
+def trim20(s):
+    s = "" if s is None else str(s)
+    return s if len(s) <= 20 else s[:20] + "..."
+
+# URL analyzer (simple: fetch title)
+def fetch_title(url):
     try:
-        response = requests.get(url, timeout=10)
-        soup = BeautifulSoup(response.text, "html.parser")
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(url, headers=headers, timeout=12)
+        r.raise_for_status()
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(r.text, "html.parser")
+        title = soup.title.string.strip() if soup.title and soup.title.string else ""
+        return title
+    except Exception:
+        return "Error fetching"
 
-        title = soup.title.string.strip() if soup.title else ""
-        meta_desc = soup.find("meta", attrs={"name": "description"})
-        summary = meta_desc["content"].strip() if meta_desc else ""
+# Build URL list from paste + upload
+urls = []
+# from paste
+if urls_text and urls_text.strip():
+    lines = [ln.strip() for ln in urls_text.splitlines() if ln.strip()]
+    urls.extend(lines)
 
-        return {
-            "URL": limit_length(url),
-            "Title": limit_length(title),
-            "Summary": limit_length(summary)
-        }
-    except:
-        return {
-            "URL": limit_length(url),
-            "Title": "Error",
-            "Summary": "Error"
-        }
+# from uploaded file
+if uploaded is not None:
+    try:
+        name = uploaded.name.lower()
+        if name.endswith(".txt"):
+            txt = uploaded.read().decode("utf-8", errors="ignore")
+            lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
+            urls.extend(lines)
+        elif name.endswith(".csv"):
+            df = pd.read_csv(uploaded, header=None)
+            urls.extend(df.iloc[:,0].astype(str).str.strip().tolist())
+        elif name.endswith(".xlsx"):
+            df = pd.read_excel(uploaded, header=None)
+            urls.extend(df.iloc[:,0].astype(str).str.strip().tolist())
+    except Exception as e:
+        st.error(f"Failed to parse uploaded file: {e}")
 
-# -----------------------------------------
-#        MAIN PROCESSING BLOCK
-# -----------------------------------------
-if uploaded_file:
-    df = None
+# De-duplicate and cleanup
+urls = [u for i,u in enumerate(urls) if u and u not in urls[:i]]
 
-    if uploaded_file.name.endswith(".txt"):
-        urls = [line.strip() for line in uploaded_file.readlines()]
-    elif uploaded_file.name.endswith(".csv"):
-        df = pd.read_csv(uploaded_file)
-        urls = df[df.columns[0]].tolist()
-    elif uploaded_file.name.endswith(".xlsx"):
-        df = pd.read_excel(uploaded_file)
-        urls = df[df.columns[0]].tolist()
+# Show count
+st.markdown(f"**Total URLs queued:** {len(urls)}")
 
-    st.success("File uploaded successfully!")
+# ------------------------
+# Process & generate excel
+# ------------------------
+if st.button("Process & Create Excel"):
+    if not urls:
+        st.error("Paste URLs or upload a file first.")
+    else:
+        st.info("Processing — fetching page titles (this may take time depending on number of URLs)...")
+        rows = []
+        progress_bar = st.progress(0)
+        for i, u in enumerate(urls, start=1):
+            title = fetch_title(u)
+            rows.append({"URL": trim20(u), "Title": trim20(title)})
+            progress_bar.progress(i/len(urls))
 
-    result_data = []
-    progress = st.progress(0)
+        df_out = pd.DataFrame(rows)
 
-    for i, url in enumerate(urls):
-        result_data.append(analyze_url(url))
-        progress.progress((i + 1) / len(urls))
+        # show preview
+        st.subheader("Preview")
+        st.dataframe(df_out)
 
-    result_df = pd.DataFrame(result_data)
-
-    st.subheader("Preview of Results")
-    st.dataframe(result_df)
-
-    # -----------------------------------------
-    #        EXCEL EXPORT (PREMIUM FORMAT)
-    # -----------------------------------------
-    if st.button("Download SEO Excel Report"):
+        # Build excel (no Summary column)
         wb = Workbook()
         ws = wb.active
-        ws.title = "SEO Report"
+        ws.title = "Audit"
 
-        headers = list(result_df.columns)
+        headers = ["URL", "Title"]
         ws.append(headers)
 
         # Styles
-        header_fill = PatternFill(start_color="4FC3F7", end_color="4FC3F7", fill_type="solid")
-        header_font = Font(color="000000", bold=True)
-        cell_border = Border(left=Side(border_style="thin", color="4FC3F7"),
-                             right=Side(border_style="thin", color="4FC3F7"),
-                             top=Side(border_style="thin", color="4FC3F7"),
-                             bottom=Side(border_style="thin", color="4FC3F7"))
+        header_fill = PatternFill("solid", fgColor="4FC3F7")
+        header_font = Font(bold=True, color="000000")
+        thin = Side(style="thin", color="4FC3F7")
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        center = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-        # Header Styling
-        for col in ws[1]:
-            col.fill = header_fill
-            col.font = header_font
-            col.alignment = Alignment(horizontal="center", vertical="center")
-            col.border = cell_border
+        # header style
+        for c in ws[1]:
+            c.fill = header_fill
+            c.font = header_font
+            c.border = border
+            c.alignment = center
 
-        # Data rows
-        for row in result_df.values:
-            ws.append(list(row))
+        # data rows
+        for r in df_out.itertuples(index=False):
+            ws.append(list(r))
 
         for row in ws.iter_rows(min_row=2):
             for cell in row:
-                cell.alignment = Alignment(wrap_text=True, vertical="center")
-                cell.border = cell_border
+                cell.border = border
+                cell.alignment = center
 
-        # Adjust column width
-        for col in ws.columns:
-            ws.column_dimensions[col[0].column_letter].width = 25
+        # set column widths (URL 40, Title 40 — trimmed to 20 in values)
+        ws.column_dimensions['A'].width = 40
+        ws.column_dimensions['B'].width = 40
 
-        # Save to bytes
-        output = BytesIO()
-        wb.save(output)
-        output.seek(0)
+        # save to bytes
+        out = BytesIO()
+        wb.save(out)
+        out.seek(0)
 
-        st.download_button(
-            label="Download Excel File",
-            data=output,
-            file_name="SEO_Report.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        st.success("Excel ready — download below")
+        st.download_button("⬇️ Download Patrika SEO Audit (XLSX)", data=out, file_name="Patrika_SEO_Audit.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
