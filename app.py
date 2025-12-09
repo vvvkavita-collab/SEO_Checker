@@ -9,7 +9,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
 
 # ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="Advanced SEO Auditor – Premium Edition", layout="wide")
+st.set_page_config(page_title="News Performance Auditor – SEO + Engagement", layout="wide")
 
 # ---------------- PREMIUM LAYOUT CSS ----------------
 st.markdown("""
@@ -19,7 +19,6 @@ header[data-testid="stHeader"] {visibility: hidden !important;}
 #MainMenu {visibility: hidden !important;}
 footer {display: none !important; visibility: hidden !important;}
 div[data-testid="stFooter"] {display: none !important; visibility: hidden !important;}
-section[data-testid="stSidebar"] ~ div [data-testid="stFooter"] {display: none !important;}
 [data-testid="stDecoration"] {display: none !important;}
 [data-testid="stToolbar"] {display: none !important;}
 .viewerBadge_container__1QSob, .viewerBadge_link__1S137 {display: none !important;}
@@ -98,33 +97,27 @@ REQ_HEADERS = {
 # ---------------- ARTICLE EXTRACTOR ----------------
 def extract_article(url):
     try:
-        # Ensure scheme
         if not url.lower().startswith(("http://", "https://")):
             url = "https://" + url.lstrip("/")
         r = requests.get(url, headers=REQ_HEADERS, timeout=25, allow_redirects=True)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # Title & meta
         title = soup.title.string.strip() if soup.title and soup.title.string else ""
         md = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", attrs={"property": "og:description"})
         meta_desc = md.get("content").strip() if md and md.get("content") else ""
 
-        # Text content
         paras = soup.find_all("p")
         article = ".".join([safe_get_text(p) for p in paras]).strip()
         article = re.sub(r"\s+", " ", article)
 
-        # Headings
         h1 = [safe_get_text(t) for t in soup.find_all("h1")]
         h2 = [safe_get_text(t) for t in soup.find_all("h2")]
 
-        # Images & alt
         imgs = soup.find_all("img")
         img_count = len(imgs)
         alt_with = sum(1 for im in imgs if (im.get("alt") or "").strip())
 
-        # Links
         anchors = soup.find_all("a")
         internal_links = 0
         external_links = 0
@@ -139,7 +132,6 @@ def extract_article(url):
             else:
                 internal_links += 1
 
-        # Counts
         paragraph_count = len([p for p in paras if safe_get_text(p)])
         sentences = re.split(r"[.!?]\s+", article)
         sentence_count = len([s for s in sentences if s.strip()])
@@ -252,115 +244,140 @@ def seo_analysis_struct(data):
 # ---------------- EXCEL FORMATTER ----------------
 def apply_excel_formatting(workbook_bytes):
     wb = load_workbook(BytesIO(workbook_bytes))
-    ws = wb["Audit"]
-    ws.sheet_view.showGridLines = False
+    ws_names = wb.sheetnames
 
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill("solid", fgColor="4F81BD")
-    red_fill = PatternFill("solid", fgColor="FF7F7F")
-    thin_border = Border(
-        left=Side(style="thin", color="4F81BD"),
-        right=Side(style="thin", color="4F81BD"),
-        top=Side(style="thin", color="4F81BD"),
-        bottom=Side(style="thin", color="4F81BD"),
-    )
-    center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    def style_ws(ws):
+        ws.sheet_view.showGridLines = False
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill("solid", fgColor="4F81BD")
+        red_fill = PatternFill("solid", fgColor="FF7F7F")
+        thin_border = Border(
+            left=Side(style="thin", color="4F81BD"),
+            right=Side(style="thin", color="4F81BD"),
+            top=Side(style="thin", color="4F81BD"),
+            bottom=Side(style="thin", color="4F81BD"),
+        )
+        center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    # Style headers
-    for cell in ws[1]:
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.border = thin_border
-        cell.alignment = center_align
-
-    headers = [c.value for c in ws[1]]
-
-    def num(v):
-        try:
-            return float(v)
-        except Exception:
-            try:
-                return int(v)
-            except Exception:
-                return None
-
-    # Red highlight failing Actuals
-    for row in ws.iter_rows(min_row=2):
-        lookup = {headers[i]: row[i] for i in range(len(headers))}
-
-        def val(h):
-            c = lookup.get(h)
-            return c.value if c else None
-
-        def mark_red(h, cond):
-            c = lookup.get(h)
-            if c and cond:
-                c.fill = red_fill
-
-        mark_red("Title Length Actual", not (50 <= (num(val("Title Length Actual")) or -1) <= 60))
-        mark_red("Meta Length Actual", not (150 <= (num(val("Meta Length Actual")) or -1) <= 160))
-        mark_red("H1 Count Actual", (num(val("H1 Count Actual")) or -1) != 1)
-        mark_red("H2 Count Actual", not (2 <= (num(val("H2 Count Actual")) or -1) <= 5))
-        mark_red("Content Length Actual", (num(val("Content Length Actual")) or -1) < 600)
-        mark_red("Paragraph Count Actual", (num(val("Paragraph Count Actual")) or -1) < 8)
-        mark_red("Image Count Actual", (num(val("Image Count Actual")) or -1) < 3)
-        img_actual = num(val("Image Count Actual")) or 0
-        alt_actual = num(val("Alt Tags Actual")) or 0
-        mark_red("Alt Tags Actual", alt_actual < img_actual)
-        mark_red("Internal Links Actual", not (2 <= (num(val("Internal Links Actual")) or -1) <= 5))
-        mark_red("External Links Actual", not (2 <= (num(val("External Links Actual")) or -1) <= 4))
-        mark_red("Readability Actual", not (10 <= (num(val("Readability Actual")) or -1) <= 20))
-
-        for cell in row:
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
             cell.border = thin_border
             cell.alignment = center_align
 
-    # Column widths
-    for col in ws.columns:
-        col_letter = col[0].column_letter
-        header_val = ws[f"{col_letter}1"].value
-        if header_val == "Summary":
-            ws.column_dimensions[col_letter].width = 20
-        elif header_val and "Verdict" in str(header_val):
-            ws.column_dimensions[col_letter].width = 18
-        elif header_val and "Ideal" in str(header_val):
-            ws.column_dimensions[col_letter].width = 30
-        else:
-            ws.column_dimensions[col_letter].width = 22
+        headers = [c.value for c in ws[1]]
+        def num(v):
+            try: return float(v)
+            except Exception:
+                try: return int(v)
+                except Exception: return None
+
+        for row in ws.iter_rows(min_row=2):
+            lookup = {headers[i]: row[i] for i in range(len(headers))}
+            def val(h):
+                c = lookup.get(h)
+                return c.value if c else None
+            def mark_red(h, cond):
+                c = lookup.get(h)
+                if c and cond:
+                    c.fill = red_fill
+
+            # SEO failing highlights (if columns exist)
+            if "Title Length Actual" in headers:
+                mark_red("Title Length Actual", not (50 <= (num(val("Title Length Actual")) or -1) <= 60))
+                mark_red("Meta Length Actual", not (150 <= (num(val("Meta Length Actual")) or -1) <= 160))
+                mark_red("H1 Count Actual", (num(val("H1 Count Actual")) or -1) != 1)
+                mark_red("H2 Count Actual", not (2 <= (num(val("H2 Count Actual")) or -1) <= 5))
+                mark_red("Content Length Actual", (num(val("Content Length Actual")) or -1) < 600)
+                mark_red("Paragraph Count Actual", (num(val("Paragraph Count Actual")) or -1) < 8)
+                mark_red("Image Count Actual", (num(val("Image Count Actual")) or -1) < 3)
+                img_actual = num(val("Image Count Actual")) or 0
+                alt_actual = num(val("Alt Tags Actual")) or 0
+                mark_red("Alt Tags Actual", alt_actual < img_actual)
+                mark_red("Internal Links Actual", not (2 <= (num(val("Internal Links Actual")) or -1) <= 5))
+                mark_red("External Links Actual", not (2 <= (num(val("External Links Actual")) or -1) <= 4))
+                mark_red("Readability Actual", not (10 <= (num(val("Readability Actual")) or -1) <= 20))
+
+            # Engagement failing highlights (if columns exist)
+            if "CTR Actual (%)" in headers:
+                mark_red("CTR Actual (%)", (num(val("CTR Actual (%)")) or 0) < 3)
+                mark_red("Bounce Rate Actual (%)", (num(val("Bounce Rate Actual (%)")) or 100) > 60)
+                mark_red("Dwell Time Actual (min)", (num(val("Dwell Time Actual (min)")) or 0) < 2)
+                mark_red("Scroll Depth Actual (%)", (num(val("Scroll Depth Actual (%)")) or 0) < 70)
+                mark_red("Shares per 100 views Actual", (num(val("Shares per 100 views Actual")) or 0) < 5)
+                mark_red("Comments per 100 views Actual", (num(val("Comments per 100 views Actual")) or 0) < 2)
+                mark_red("Repeat Visitors Actual (%)", (num(val("Repeat Visitors Actual (%)")) or 0) < 20)
+                mark_red("Push CTR Actual (%)", (num(val("Push CTR Actual (%)")) or 0) < 5)
+                mark_red("Newsletter CTR Actual (%)", (num(val("Newsletter CTR Actual (%)")) or 0) < 3)
+
+            for cell in row:
+                cell.border = thin_border
+                cell.alignment = center_align
+
+        # Column widths
+        for col in ws.columns:
+            col_letter = col[0].column_letter
+            header_val = ws[f"{col_letter}1"].value
+            if header_val and ("URL" in str(header_val) or "Summary" in str(header_val)):
+                ws.column_dimensions[col_letter].width = 40 if "URL" in str(header_val) else 20
+            elif header_val and "Verdict" in str(header_val):
+                ws.column_dimensions[col_letter].width = 18
+            elif header_val and "Ideal" in str(header_val):
+                ws.column_dimensions[col_letter].width = 30
+            else:
+                ws.column_dimensions[col_letter].width = 22
+
+    for name in ws_names:
+        if name in ["Audit (SEO)", "Engagement Audit"]:
+            style_ws(wb[name])
 
     out = BytesIO()
     wb.save(out)
     return out.getvalue()
 
-# ---------------- UI + STATE ----------------
-st.title("🚀 Advanced SEO Auditor – Premium Edition")
-st.subheader("URL Analysis → Excel Report → Actual vs Ideal + Human Verdicts")
+# ---------------- UI + MODE ----------------
+st.title("🚀 News Performance Auditor")
+st.subheader("Choose what to check → SEO or SEO + Engagement")
 
+mode = st.radio("Select check mode", ["SEO only", "SEO + Engagement"], index=0)
+
+# Keep merged URLs in session
 if "merged_urls" not in st.session_state:
     st.session_state.merged_urls = ""
 
-uploaded = st.file_uploader("Upload URL List (TXT/CSV/XLSX)", type=["txt", "csv", "xlsx"])
+uploaded_urls_file = st.file_uploader("Upload URL List (TXT/CSV/XLSX)", type=["txt", "csv", "xlsx"])
 urls_input = st.text_area("Paste URLs here", value=st.session_state.merged_urls, height=220)
 
-# Merge uploaded into session_state (reliable across reruns)
-if uploaded is not None:
+# Merge uploaded URLs
+if uploaded_urls_file is not None:
     try:
-        if uploaded.type == "text/plain":
-            content = uploaded.read().decode("utf-8", errors="ignore")
+        if uploaded_urls_file.type == "text/plain":
+            content = uploaded_urls_file.read().decode("utf-8", errors="ignore")
             uploaded_urls = "\n".join([l.strip() for l in content.splitlines() if l.strip()])
-        elif uploaded.type == "text/csv":
-            df_u = pd.read_csv(uploaded, header=None)
+        elif uploaded_urls_file.type == "text/csv":
+            df_u = pd.read_csv(uploaded_urls_file, header=None)
             uploaded_urls = "\n".join(df_u.iloc[:, 0].astype(str).str.strip())
         else:
-            df_u = pd.read_excel(uploaded, header=None)
+            df_u = pd.read_excel(uploaded_urls_file, header=None)
             uploaded_urls = "\n".join(df_u.iloc[:, 0].astype(str).str.strip())
-        st.info("File processed. Merged into the text area below.")
+        st.info("URL file processed. Merged into the text area below.")
         existing = urls_input.strip()
         st.session_state.merged_urls = (existing + "\n" + uploaded_urls).strip() if existing else uploaded_urls
-        # Reflect immediately in the textarea
         urls_input = st.session_state.merged_urls
     except Exception as e:
-        st.error(f"Failed to read uploaded file: {e}")
+        st.error(f"Failed to read uploaded URL file: {e}")
+
+# Engagement CSV uploader (only in SEO + Engagement mode)
+eng_csv = None
+if mode == "SEO + Engagement":
+    st.markdown("Upload Engagement CSV (optional, per-URL metrics)")
+    eng_csv_file = st.file_uploader("Engagement CSV (columns: URL, CTR, BounceRate, DwellTimeMin, ScrollDepth, SharesPer100, CommentsPer100, RepeatVisitorsPct, PushCTRPct, NewsletterCTRPct)", type=["csv"])
+    if eng_csv_file is not None:
+        try:
+            eng_csv = pd.read_csv(eng_csv_file)
+            st.success("Engagement CSV loaded.")
+        except Exception as e:
+            st.error(f"Failed to read Engagement CSV: {e}")
 
 process = st.button("Process & Create Report")
 
@@ -368,24 +385,23 @@ if process:
     if not urls_input.strip():
         st.error("Please paste some URLs or upload a file.")
     else:
-        # Build clean URL list (remove duplicates while preserving order)
+        # Build clean URL list (dedupe preserving order)
         seen = set()
         urls = []
         for u in urls_input.splitlines():
             u = u.strip()
-            if not u:
-                continue
-            if u not in seen:
+            if u and u not in seen:
                 seen.add(u)
                 urls.append(u)
 
-        rows = []
+        # --------- SEO PROCESSING ----------
+        rows_seo = []
         progress = st.progress(0)
         status = st.empty()
 
         for i, url in enumerate(urls, start=1):
-            status.text(f"Processing {i}/{len(urls)} : {url}")
-            data = extract_article(url)  # Per‑URL fresh fetch with strong headers
+            status.text(f"[SEO] Processing {i}/{len(urls)} : {url}")
+            data = extract_article(url)
             score, grade, metrics, extras = seo_analysis_struct(data)
 
             row = {
@@ -394,28 +410,92 @@ if process:
                 "SEO Score": score,
                 "SEO Grade": grade,
             }
-
-            # Add Actual + Ideal + Verdict for each essential metric
             for actual_h, actual_v, ideal_h, ideal_v, verdict_h, verdict_v in metrics:
                 row[actual_h] = actual_v
                 row[ideal_h] = ideal_v
                 row[verdict_h] = verdict_v
 
-            rows.append(row)
+            rows_seo.append(row)
             progress.progress(int((i / len(urls)) * 100))
 
-        df = pd.DataFrame(rows)
+        df_seo = pd.DataFrame(rows_seo)
 
-        # Excel: Audit + Column Definitions sheets
+        # --------- ENGAGEMENT PROCESSING ----------
+        df_eng = pd.DataFrame()
+        if mode == "SEO + Engagement" and eng_csv is not None and not eng_csv.empty:
+            # Normalize columns
+            col_map = {
+                "URL": "URL",
+                "CTR": "CTR Actual (%)",
+                "BounceRate": "Bounce Rate Actual (%)",
+                "DwellTimeMin": "Dwell Time Actual (min)",
+                "ScrollDepth": "Scroll Depth Actual (%)",
+                "SharesPer100": "Shares per 100 views Actual",
+                "CommentsPer100": "Comments per 100 views Actual",
+                "RepeatVisitorsPct": "Repeat Visitors Actual (%)",
+                "PushCTRPct": "Push CTR Actual (%)",
+                "NewsletterCTRPct": "Newsletter CTR Actual (%)",
+            }
+            # Rename if present
+            eng_df = eng_csv.rename(columns={k: v for k, v in col_map.items() if k in eng_csv.columns})
+
+            # Ideal columns and verdicts
+            engagement_rows = []
+            for url in urls:
+                row = {"URL": url}
+                # Find matching URL row in engagement CSV
+                match = eng_df[eng_df[col_map["URL"]] == url] if col_map["URL"] in eng_df.columns else pd.DataFrame()
+                # Helper to get value
+                def getv(col_name):
+                    if col_name in eng_df.columns and not match.empty:
+                        return match.iloc[0][col_name]
+                    return None
+
+                # Build metrics
+                metrics_eng = [
+                    ("CTR Actual (%)", getv("CTR Actual (%)"), "CTR Ideal", "3–5%+", "CTR Verdict",
+                     "✅ Good" if (getv("CTR Actual (%)") or 0) >= 3 else "❌ Needs Fix"),
+                    ("Bounce Rate Actual (%)", getv("Bounce Rate Actual (%)"), "Bounce Rate Ideal", "< 60%", "Bounce Rate Verdict",
+                     "✅ Good" if (getv("Bounce Rate Actual (%)") or 100) < 60 else "❌ Needs Fix"),
+                    ("Dwell Time Actual (min)", getv("Dwell Time Actual (min)"), "Dwell Time Ideal", "2–3 minutes+", "Dwell Time Verdict",
+                     "✅ Good" if (getv("Dwell Time Actual (min)") or 0) >= 2 else "❌ Needs Fix"),
+                    ("Scroll Depth Actual (%)", getv("Scroll Depth Actual (%)"), "Scroll Depth Ideal", "70%+", "Scroll Depth Verdict",
+                     "✅ Good" if (getv("Scroll Depth Actual (%)") or 0) >= 70 else "❌ Needs Fix"),
+                    ("Shares per 100 views Actual", getv("Shares per 100 views Actual"), "Shares per 100 views Ideal", "5+", "Shares Verdict",
+                     "✅ Good" if (getv("Shares per 100 views Actual") or 0) >= 5 else "❌ Needs Fix"),
+                    ("Comments per 100 views Actual", getv("Comments per 100 views Actual"), "Comments per 100 views Ideal", "2+", "Comments Verdict",
+                     "✅ Good" if (getv("Comments per 100 views Actual") or 0) >= 2 else "❌ Needs Fix"),
+                    ("Repeat Visitors Actual (%)", getv("Repeat Visitors Actual (%)"), "Repeat Visitors Ideal", "20–30%+", "Repeat Visitors Verdict",
+                     "✅ Good" if (getv("Repeat Visitors Actual (%)") or 0) >= 20 else "❌ Needs Fix"),
+                    ("Push CTR Actual (%)", getv("Push CTR Actual (%)"), "Push CTR Ideal", "5–10%+", "Push CTR Verdict",
+                     "✅ Good" if (getv("Push CTR Actual (%)") or 0) >= 5 else "❌ Needs Fix"),
+                    ("Newsletter CTR Actual (%)", getv("Newsletter CTR Actual (%)"), "Newsletter CTR Ideal", "3–5%+", "Newsletter CTR Verdict",
+                     "✅ Good" if (getv("Newsletter CTR Actual (%)") or 0) >= 3 else "❌ Needs Fix"),
+                ]
+
+                for ah, av, ih, iv, vh, vv in metrics_eng:
+                    row[ah] = av
+                    row[ih] = iv
+                    row[vh] = vv
+
+                engagement_rows.append(row)
+
+            df_eng = pd.DataFrame(engagement_rows)
+
+        # --------- EXCEL: BUILD SHEETS ----------
         out = BytesIO()
         with pd.ExcelWriter(out, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name="Audit")
+            df_seo.to_excel(writer, index=False, sheet_name="Audit (SEO)")
 
-            # Create Column Definitions sheet (ONLY IDEAL HEADINGS)
+            if mode == "SEO + Engagement" and not df_eng.empty:
+                df_eng.to_excel(writer, index=False, sheet_name="Engagement Audit")
+
+            # Column Definitions — only Ideal headings with meaning & why important
             wb = writer.book
             ws_def = wb.create_sheet("Column Definitions")
             ws_def.append(["Ideal Column Heading", "Meaning (Kya hai)", "Why Important (Kyu zaruri)"])
 
+            # SEO Ideal definitions
             ideal_definitions = [
                 ("Title Length Ideal", "Recommended title length", "Fits search snippet, readable headline, improves CTR"),
                 ("Meta Length Ideal", "Recommended meta description length", "Fits Google snippet, persuasive summary without truncation"),
@@ -429,19 +509,29 @@ if process:
                 ("External Links Ideal", "2–4 external links", "Adds credibility via trusted references, supports fact-checking"),
                 ("Readability Ideal", "10–20 words per sentence", "Natural flow, easier comprehension, reduces cognitive load"),
             ]
-
+            # Engagement Ideal definitions
+            ideal_definitions += [
+                ("CTR Ideal", "Click-through rate on listings/snippets", "Measures headline appeal and snippet effectiveness"),
+                ("Bounce Rate Ideal", "Share of visitors leaving quickly", "Indicates relevance and readability of content"),
+                ("Dwell Time Ideal", "Average time on page", "Shows depth and reader interest"),
+                ("Scroll Depth Ideal", "Percentage of content scrolled", "Signals whether readers consume the full article"),
+                ("Shares per 100 views Ideal", "Social shares per 100 views", "Reflects virality and offsite reach"),
+                ("Comments per 100 views Ideal", "Comments per 100 views", "Measures community engagement and discussion"),
+                ("Repeat Visitors Ideal", "Percent of returning readers", "Shows loyalty and trust"),
+                ("Push CTR Ideal", "Click-through on push notifications", "Indicates notification relevance and timeliness"),
+                ("Newsletter CTR Ideal", "Click-through on email newsletters", "Measures email engagement and targeting"),
+            ]
             for row in ideal_definitions:
                 ws_def.append(row)
-
             for col in ws_def.columns:
-                ws_def.column_dimensions[col[0].column_letter].width = 32
+                ws_def.column_dimensions[col[0].column_letter].width = 36
 
         final_bytes = apply_excel_formatting(out.getvalue())
 
         st.success("🎉 Report created successfully!")
         st.download_button(
-            "Download SEO Audit Excel",
+            "Download News Performance Audit",
             data=final_bytes,
-            file_name="SEO_Audit_Final.xlsx",
+            file_name="News_Performance_Audit.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
