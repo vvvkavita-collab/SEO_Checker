@@ -9,7 +9,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
 
 # ----------------------------------------------------
-# PAGE CONFIG — hide menu and footer ribbons
+# PAGE CONFIG — hide menu, GitHub, and footer ribbons
 # ----------------------------------------------------
 st.set_page_config(
     page_title="Advanced SEO Auditor",
@@ -143,6 +143,7 @@ def extract_article(url):
             if href.startswith("#") or href.startswith("mailto:") or href.strip() == "":
                 continue
             parsed = urlparse(href)
+            # Absolute external link
             if parsed.netloc and parsed.netloc.lower() != domain:
                 external_links += 1
             else:
@@ -211,7 +212,8 @@ def seo_analysis_struct(data):
     external_links = data["external_links"]
     avg_wps = data["avg_words_per_sentence"]
 
-    keyword_density = 0  # placeholder
+    # Not calculated (placeholder)
+    keyword_density = "N/A"
 
     pairs = [
         ("Title Length Ideal", "50–60 chars (best for CTR)", "Title Length Actual", len(title)),
@@ -228,6 +230,7 @@ def seo_analysis_struct(data):
         ("Readability Ideal", "10–20 words/sentence", "Readability Actual", avg_wps),
     ]
 
+    # Scoring (strictly numeric metrics only)
     score = 0
     if 50 <= len(title) <= 60: score += 10
     if 150 <= len(meta) <= 160: score += 10
@@ -244,7 +247,8 @@ def seo_analysis_struct(data):
     score = min(score, 100)
     grade = "A+" if score >= 90 else "A" if score >= 80 else "B" if score >= 65 else "C" if score >= 50 else "D"
     predicted_rating = round(score / 10, 1)
-    extras = {"Summary": data["summary"][:20]}  # enforce 20 in output too
+
+    extras = {"Summary": (data["summary"] or "")[:20]}  # enforce 20 in output
     return score, grade, predicted_rating, pairs, extras
 
 # ----------------------------------------------------
@@ -298,6 +302,7 @@ def apply_excel_formatting(workbook_bytes):
             if c and cond:
                 c.fill = red_fill
 
+        # Only numeric checks
         mark_red("Title Length Actual", not (50 <= (num(val("Title Length Actual")) or -1) <= 60))
         mark_red("Meta Length Actual", not (150 <= (num(val("Meta Length Actual")) or -1) <= 160))
         mark_red("H1 Count Actual", (num(val("H1 Count Actual")) or -1) != 1)
@@ -364,7 +369,6 @@ if process:
     else:
         urls = [u.strip() for u in urls_input.splitlines() if u.strip()]
         rows = []
-        pairs_reference = None
 
         progress = st.progress(0)
         status = st.empty()
@@ -374,9 +378,7 @@ if process:
             data = extract_article(url)
             score, grade, predicted, pairs, extras = seo_analysis_struct(data)
 
-            if pairs_reference is None:
-                pairs_reference = pairs
-
+            # Build row fresh per-URL to avoid reuse bugs
             row = {
                 "URL": url,
                 "Title": data["title"],
@@ -386,8 +388,8 @@ if process:
                 "Predicted Public Rating": predicted,
             }
 
-            # Add Ideal/Actual pairs in a consistent order
-            for ideal_label, ideal_value, actual_label, actual_value in pairs_reference:
+            # Add Ideal/Actual pairs in a consistent order for this URL
+            for ideal_label, ideal_value, actual_label, actual_value in pairs:
                 row[ideal_label] = ideal_value
                 row[actual_label] = actual_value
 
