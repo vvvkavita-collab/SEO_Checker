@@ -8,7 +8,71 @@ from io import BytesIO
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
 
-st.set_page_config(page_title="Advanced SEO Auditor", layout="wide")
+# ---------------- PAGE CONFIG ----------------
+st.set_page_config(page_title="Advanced SEO Auditor – Premium Edition", layout="wide")
+
+# ---------------- PREMIUM LAYOUT CSS ----------------
+st.markdown("""
+<style>
+header[data-testid="stHeader"] {visibility: hidden;}
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+[data-testid="stDecoration"] {display: none !important;}
+
+html, body, [data-testid="stAppViewContainer"] {
+    background: linear-gradient(135deg, #141E30, #243B55) !important;
+    color: white !important;
+    overflow-x: hidden;
+}
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0F2027, #203A43, #2C5364);
+    color: white !important;
+}
+h1, h2, h3, h4, h5, h6, p, span, div, label {
+    color: white !important;
+}
+.stTextArea textarea, .stTextInput input {
+    background: #1e2a3b !important;
+    border: 2px solid #4F81BD !important;
+    border-radius: 12px !important;
+    color: white !important;
+}
+.stFileUploader {
+    background: #1e2a3b !important;
+    color: white !important;
+    border: 2px dashed #4F81BD !important;
+    border-radius: 12px !important;
+    padding: 15px;
+}
+.stButton>button {
+    background: #4F81BD !important;
+    color: white !important;
+    border-radius: 10px;
+    padding: 10px 20px;
+    font-size: 18px;
+    border: none;
+    box-shadow: 0px 4px 10px rgba(79,129,189,0.5);
+}
+.stButton>button:hover {
+    background: #3A6EA5 !important;
+}
+@media (max-width: 768px) {
+    h1 { font-size: 26px !important; text-align: center !important; }
+    h2 { font-size: 20px !important; text-align: center !important; }
+    p, label, span, div { font-size: 16px !important; }
+    .stTextArea textarea, .stTextInput input {
+        font-size: 15px !important;
+        padding: 10px !important;
+    }
+    .stFileUploader { padding: 20px !important; }
+    .stButton>button {
+        width: 100% !important;
+        font-size: 18px !important;
+        padding: 14px !important;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ---------------- SAFE GET TEXT ----------------
 def safe_get_text(tag):
@@ -140,52 +204,4 @@ def seo_analysis_struct(data):
     if 50 <= len(title) <= 60: score += 10
     if 150 <= len(meta) <= 160: score += 10
     if h1_count == 1: score += 8
-    if 2 <= h2_count <= 5: score += 6
-    if word_count >= 600: score += 12
-    if paragraph_count >= 8: score += 6
-    if img_count >= 3: score += 8
-    if img_count > 0 and alt_with == img_count: score += 6
-    if 2 <= internal_links <= 5: score += 4
-    if 2 <= external_links <= 4: score += 4
-    if 10 <= avg_wps <= 20: score += 8
-
-    score = min(score, 100)
-    grade = "A+" if score >= 90 else "A" if score >= 80 else "B" if score >= 65 else "C" if score >= 50 else "D"
-    extras = {"Summary": (data["summary"] or "")[:20]}
-    return score, grade, pairs, extras
-
-# ---------------- UI ----------------
-st.title("🚀 Advanced SEO Auditor – Premium Edition")
-st.subheader("URL Analysis → Excel Report → SEO Guidelines (Auto Generated)")
-
-uploaded = st.file_uploader("Upload URL List (TXT/CSV/XLSX)", type=["txt", "csv", "xlsx"])
-urls_input = st.text_area("Paste URLs here", height=200)
-
-if uploaded is not None:
-    try:
-        if uploaded.type == "text/plain":
-            content = uploaded.read().decode("utf-8", errors="ignore")
-            uploaded_urls = "\n".join([l.strip() for l in content.splitlines() if l.strip()])
-        elif uploaded.type == "text/csv":
-            df = pd.read_csv(uploaded, header=None)
-            uploaded_urls = "\n".join(df.iloc[:, 0].astype(str).str.strip())
-        else:
-            df = pd.read_excel(uploaded, header=None)
-            uploaded_urls = "\n".join(df.iloc[:, 0].astype(str).str.strip())
-        st.info("File processed. Merged into the text area below.")
-        existing = urls_input.strip()
-        urls_input = (existing + "\n" + uploaded_urls).strip() if existing else uploaded_urls
-    except Exception as e:
-        st.error(f"Failed to read uploaded file: {e}")
-
-process = st.button("Process & Create Report")
-
-if process:
-    if not urls_input.strip():
-        st.error("Please paste some URLs or upload a file.")
-    else:
-        urls = [u.strip() for u in urls_input.splitlines() if u.strip()]
-        rows = []
-        progress = st.progress(0)
-        status = st.empty()
-
+    if 2
