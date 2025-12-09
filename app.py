@@ -9,24 +9,61 @@ from openpyxl import load_workbook, Workbook
 from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
 
 # ----------------------------------------------------
-# PAGE CONFIG — GitHub ribbon removed
+# PAGE CONFIG — GitHub ribbon removed + menu removed
 # ----------------------------------------------------
 st.set_page_config(
     page_title="Advanced SEO Auditor",
     layout="wide",
     initial_sidebar_state="auto",
-    menu_items={}  # disables GitHub & About menu
+    menu_items={          # Hides GitHub, About, Feedback
+        "Get Help": None,
+        "Report a bug": None,
+        "About": None
+    }
 )
 
 # ----------------------------------------------------
-# PREMIUM UI CSS — Dark mode + fixed file uploader
+# PREMIUM UI CSS — Responsive Mobile Fix + Hide Fork
 # ----------------------------------------------------
 st.markdown("""
 <style>
+
+/* ----- Hide Streamlit top-right menu ----- */
+header[data-testid="stHeader"] {visibility: hidden;}
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+
+/* Hide streamlit deployed by banner (Hosted on Streamlit) */
+[data-testid="stDecoration"] {display: none !important;}
+
+/* ----- Full App Styling ----- */
 html, body, [data-testid="stAppViewContainer"] {
     background: linear-gradient(135deg, #141E30, #243B55) !important;
     color: white !important;
+    overflow-x: hidden;
 }
+
+/* Mobile Responsive Fix */
+@media (max-width: 768px) {
+    h1 { font-size: 26px !important; text-align: center !important; }
+    h2 { font-size: 20px !important; text-align: center !important; }
+    h3, h4, h5, h6 { text-align: center !important; }
+    p, label, span, div { font-size: 16px !important; }
+    .stTextArea textarea, .stTextInput input {
+        font-size: 15px !important;
+        padding: 10px !important;
+    }
+    .stFileUploader {
+        padding: 20px !important;
+    }
+    .stButton>button {
+        width: 100% !important;
+        font-size: 18px !important;
+        padding: 14px !important;
+    }
+}
+
+/* Normal styling */
 [data-testid="stSidebar"] {
     background: linear-gradient(180deg, #0F2027, #203A43, #2C5364);
     color: white !important;
@@ -91,7 +128,6 @@ def extract_article(url):
             meta_desc = md.get("content").strip()
 
         paras = soup.find_all("p")
-        # Join paragraphs with a dot to simulate sentence separation
         article = ".".join([safe_get_text(p) for p in paras]).strip()
         article = re.sub(r"\s+", " ", article)
 
@@ -130,7 +166,7 @@ def extract_article(url):
                 summary += "."
 
         return {
-            "title": title[:120],  # keep more for analysis, UI can truncate
+            "title": title,
             "meta": meta_desc,
             "article": article,
             "h1": h1,
@@ -146,22 +182,11 @@ def extract_article(url):
             "summary": summary,
         }
     except:
-        return {
-            "title": "",
-            "meta": "",
-            "article": "",
-            "h1": [],
-            "h2": [],
-            "img_count": 0,
-            "alt_with": 0,
-            "internal_links": 0,
-            "external_links": 0,
-            "paragraph_count": 0,
-            "sentence_count": 0,
-            "word_count": 0,
-            "avg_words_per_sentence": 0,
-            "summary": "",
-        }
+        return {k: "" for k in [
+            "title","meta","article","h1","h2","img_count","alt_with","internal_links",
+            "external_links","paragraph_count","sentence_count","word_count",
+            "avg_words_per_sentence","summary"
+        ]}
 
 # ----------------------------------------------------
 # SEO ANALYSIS
@@ -179,7 +204,6 @@ def seo_analysis_struct(data):
     external_links = data["external_links"]
     avg_wps = data["avg_words_per_sentence"]
 
-    # You can compute keyword density if needed; kept 0 in this version
     keyword_density = 0
 
     pairs = [
@@ -213,13 +237,16 @@ def seo_analysis_struct(data):
     score = min(score, 100)
     grade = "A+" if score >= 90 else "A" if score >= 80 else "B" if score >= 65 else "C" if score >= 50 else "D"
     predicted_rating = round(score / 10, 1)
+
     extras = {"Summary": data["summary"]}
+
     return score, grade, predicted_rating, pairs, extras
 
 # ----------------------------------------------------
-# EXCEL FORMATTER — adds red highlights to failing Actual metrics
+# EXCEL FORMATTER — ADD SUMMARY COLUMN WIDTH FIX
 # ----------------------------------------------------
 def apply_excel_formatting(workbook_bytes):
+
     wb = load_workbook(BytesIO(workbook_bytes))
     ws = wb["Audit"]
 
@@ -236,26 +263,20 @@ def apply_excel_formatting(workbook_bytes):
     )
     center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    # Style header
     for cell in ws[1]:
         cell.font = header_font
         cell.fill = header_fill
         cell.border = thin_border
         cell.alignment = center_align
 
-    # Helper for safe numeric
-    def num(v):
-        try:
-            return float(v)
-        except:
-            try:
-                return int(v)
-            except:
-                return None
-
-    # Mark failing Actual metrics red + apply borders/align
     headers = [c.value for c in ws[1]]
     header_idx = {h: i for i, h in enumerate(headers)}
+
+    def num(v):
+        try: return float(v)
+        except:
+            try: return int(v)
+            except: return None
 
     for row in ws.iter_rows(min_row=2):
         lookup = {headers[i]: row[i] for i in range(len(headers))}
@@ -269,7 +290,6 @@ def apply_excel_formatting(workbook_bytes):
             if c and cond:
                 c.fill = red_fill
 
-        # Apply rules
         mark_red("Title Length Actual", not (50 <= (num(val("Title Length Actual")) or -1) <= 60))
         mark_red("Meta Length Actual", not (150 <= (num(val("Meta Length Actual")) or -1) <= 160))
         mark_red("H1 Count Actual", (num(val("H1 Count Actual")) or -1) != 1)
@@ -277,22 +297,28 @@ def apply_excel_formatting(workbook_bytes):
         mark_red("Content Length Actual", (num(val("Content Length Actual")) or -1) < 600)
         mark_red("Paragraph Count Actual", (num(val("Paragraph Count Actual")) or -1) < 8)
         mark_red("Image Count Actual", (num(val("Image Count Actual")) or -1) < 3)
-        # Alt tags must be >= image count
+
         img_actual = num(val("Image Count Actual")) or 0
         alt_actual = num(val("Alt Tags Actual")) or 0
         mark_red("Alt Tags Actual", alt_actual < img_actual)
+
         mark_red("Internal Links Actual", not (2 <= (num(val("Internal Links Actual")) or -1) <= 5))
         mark_red("External Links Actual", not (2 <= (num(val("External Links Actual")) or -1) <= 4))
         mark_red("Readability Actual", not (10 <= (num(val("Readability Actual")) or -1) <= 20))
 
-        # Borders + alignment on all row cells
         for cell in row:
             cell.border = thin_border
             cell.alignment = center_align
 
-    # Column widths
+    # ------------------------------------------------------------
+    # FIX: SUMMARY COLUMN WIDTH SET TO MAX 20
+    # ------------------------------------------------------------
     for col in ws.columns:
-        ws.column_dimensions[col[0].column_letter].width = 22
+        col_letter = col[0].column_letter
+        if ws[col_letter + "1"].value == "Summary":
+            ws.column_dimensions[col_letter].width = 20
+        else:
+            ws.column_dimensions[col_letter].width = 22
 
     out = BytesIO()
     wb.save(out)
@@ -307,7 +333,6 @@ st.subheader("URL Analysis → Excel Report → SEO Guidelines (Auto Generated)"
 uploaded = st.file_uploader("Upload URL List (TXT/CSV/XLSX)", type=["txt", "csv", "xlsx"])
 urls_input = st.text_area("Paste URLs here", height=200)
 
-# If user uploads a file, load URLs into the text area for review
 if uploaded is not None:
     try:
         if uploaded.type == "text/plain":
@@ -319,8 +344,9 @@ if uploaded is not None:
         else:
             df = pd.read_excel(uploaded, header=None)
             st.session_state["uploaded_urls"] = "\n".join(df.iloc[:,0].astype(str).str.strip())
+
         st.info("File processed. Merged into the text area below.")
-        # Merge with existing text area input
+
         existing = urls_input.strip()
         merged = (existing + "\n" + st.session_state.get("uploaded_urls", "")).strip() if existing else st.session_state.get("uploaded_urls", "")
         urls_input = merged
@@ -366,12 +392,10 @@ if process:
 
         df = pd.DataFrame(rows)
 
-        # Write Audit sheet
         out = BytesIO()
         with pd.ExcelWriter(out, engine="openpyxl") as writer:
             df.to_excel(writer, index=False, sheet_name="Audit")
 
-            # Add SEO Guidelines sheet
             wb_in_writer = writer.book
             ws_g = wb_in_writer.create_sheet("SEO Guidelines")
             ws_g.append(["Parameter", "Meaning / Purpose", "Ideal Range", "Why Important"])
@@ -394,7 +418,6 @@ if process:
             for col in ws_g.columns:
                 ws_g.column_dimensions[col[0].column_letter].width = 25
 
-        # Apply formatting (red highlights etc.)
         final_bytes = apply_excel_formatting(out.getvalue())
 
         st.success("🎉 Excel created successfully!")
