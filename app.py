@@ -23,7 +23,7 @@ except Exception:
 st.set_page_config(page_title="Advanced SEO Auditor – Premium Edition (OpenAI)", layout="wide")
 
 # ---------------- PREMIUM LAYOUT CSS ----------------
-st.markdown("""<style>/* your existing CSS (kept as-is, omitted here for brevity) */
+st.markdown("""<style>
 header[data-testid="stHeader"] {visibility: hidden !important;}
 #MainMenu {visibility: hidden !important;}
 footer {display: none !important; visibility: hidden !important;}
@@ -55,33 +55,22 @@ REQ_HEADERS = {
 # ---------------- ARTICLE EXTRACTOR ----------------
 def extract_article(url):
     try:
-        # Ensure scheme
         if not url.lower().startswith(("http://", "https://")):
             url = "https://" + url.lstrip("/")
         r = requests.get(url, headers=REQ_HEADERS, timeout=25, allow_redirects=True)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
-
-        # Title & meta
         title = soup.title.string.strip() if soup.title and soup.title.string else ""
         md = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", attrs={"property": "og:description"})
         meta_desc = md.get("content").strip() if md and md.get("content") else ""
-
-        # Text content
         paras = soup.find_all("p")
         article = ".".join([safe_get_text(p) for p in paras]).strip()
         article = re.sub(r"\s+", " ", article)
-
-        # Headings
         h1 = [safe_get_text(t) for t in soup.find_all("h1")]
         h2 = [safe_get_text(t) for t in soup.find_all("h2")]
-
-        # Images & alt
         imgs = soup.find_all("img")
         img_count = len(imgs)
         alt_with = sum(1 for im in imgs if (im.get("alt") or "").strip())
-
-        # Links
         anchors = soup.find_all("a")
         internal_links = 0
         external_links = 0
@@ -95,21 +84,17 @@ def extract_article(url):
                 external_links += 1
             else:
                 internal_links += 1
-
-        # Counts
         paragraph_count = len([p for p in paras if safe_get_text(p)])
         sentences = re.split(r"[.!?]\s+", article)
         sentence_count = len([s for s in sentences if s.strip()])
         words = article.split()
         word_count = len(words)
         avg_words_per_sentence = round(word_count / max(1, sentence_count), 2)
-
         summary = ""
         if sentence_count >= 1:
             summary = ". ".join(sentence.strip() for sentence in sentences[:2]).strip()
             if summary and not summary.endswith("."):
                 summary += "."
-
         return {
             "title": title,
             "meta": meta_desc,
@@ -123,10 +108,9 @@ def extract_article(url):
             "word_count": word_count,
             "avg_words_per_sentence": avg_words_per_sentence,
             "summary": summary,
-            "raw_text": article[:3000],  # truncated raw text for prompt (limit payload)
+            "raw_text": article[:3000],
         }
-    except Exception as e:
-        # Return safe empty structure on failure
+    except Exception:
         return {
             "title": "",
             "meta": "",
@@ -190,7 +174,6 @@ def seo_analysis_struct(data):
         ("Readability Actual", avg_wps, "Readability Ideal", "10–20 words/sentence", "Readability Verdict", verdict(avg_wps, 10, 20)),
     ]
 
-    # Scoring
     score = 0
     if 50 <= len(title) <= 60: score += 10
     if 150 <= len(meta) <= 160: score += 10
@@ -211,12 +194,9 @@ def seo_analysis_struct(data):
 
 # ---------------- OpenAI SUGGESTION GENERATOR ----------------
 def get_openai_client():
-    # Try to get key from Streamlit secrets then environment
-    key = None
-    try:
-        key = st.secrets["OPENAI_API_KEY"]
-    except Exception:
-        key = os.getenv("OPENAI_API_KEY")
+    # === Directly add your OpenAI API key here ===
+    key = "YOUR_OPENAI_API_KEY_HERE"   # <<--- Replace this with your actual OpenAI API key
+    
     if not key:
         return None, None
     if _OPENAI_CLIENT_AVAILABLE:
@@ -230,25 +210,13 @@ def get_openai_client():
         except Exception:
             return None, None
 
+# ---------------- AI / Rule-based Suggestions ----------------
 def ai_generate_suggestions(client_obj, data, model="gpt-3.5-turbo", max_tokens=700):
-    """
-    Calls OpenAI to generate structured SEO suggestions. Expects client_obj
-    to either be OpenAI Client instance with .chat.completions.create OR the legacy openai module.
-    Returns a dict with suggested_title, suggested_meta, issues, fixes, keywords, short_summary, quality_score
-    """
-    # Build prompt (structured JSON output)
-    sys = (
-        "You are an expert news SEO editor. "
-        "Given the extracted article metadata and short article text, return a JSON object only (no extra text) "
-        "with the following keys: suggested_title, suggested_meta, short_summary, issues (array of strings), "
-        "fixes (array of strings), keywords (array of strings), content_quality_score (0-100). "
-        "Make suggested_title 50-70 characters, suggested_meta 120-160 characters, and short_summary max 160 chars. "
-        "Issues should be concise (max 8 words each). Fixes should be actionable (one sentence each). "
-    )
-    payload = {
-        "title": data.get("title",""),
-        "meta": data.get("meta",""),
-        "summary": data.get("summary",""),
+    sys = ("You are an expert news SEO editor. "
+           "Given the extracted article metadata and short article text, return a JSON object only (no extra text) "
+           "with suggested_title, suggested_meta, short_summary, issues, fixes, keywords, content_quality_score")
+    payload = {k:data.get(k,"") for k in ["title","meta","summary"]}
+    payload.update({
         "word_count": data.get("word_count",0),
         "h1_count": len(data.get("h1",[])),
         "h2_count": len(data.get("h2",[])),
@@ -258,90 +226,59 @@ def ai_generate_suggestions(client_obj, data, model="gpt-3.5-turbo", max_tokens=
         "external_links": data.get("external_links",0),
         "avg_words_per_sentence": data.get("avg_words_per_sentence",0),
         "raw_text_excerpt": data.get("raw_text","")
-    }
-
-    user_prompt = (
-        "Extracted data (JSON):\n"
-        + json.dumps(payload, ensure_ascii=False, indent=0)
-        + "\n\nProduce the JSON response now."
-    )
-
+    })
+    user_prompt = "Extracted data (JSON):\n" + json.dumps(payload, ensure_ascii=False, indent=0) + "\n\nProduce JSON now."
     try:
-        # Use new OpenAI client if available
         if _OPENAI_CLIENT_AVAILABLE and hasattr(client_obj, "chat"):
             resp = client_obj.chat.completions.create(
                 model=model,
-                messages=[{"role":"system","content":sys}, {"role":"user","content":user_prompt}],
+                messages=[{"role":"system","content":sys},{"role":"user","content":user_prompt}],
                 temperature=0.0,
                 max_tokens=max_tokens,
             )
             text = resp.choices[0].message["content"]
         else:
-            # fallback to legacy openai
             resp = client_obj.ChatCompletion.create(
                 model=model,
-                messages=[{"role":"system","content":sys}, {"role":"user","content":user_prompt}],
+                messages=[{"role":"system","content":sys},{"role":"user","content":user_prompt}],
                 temperature=0.0,
                 max_tokens=max_tokens,
             )
             text = resp.choices[0].message["content"]
-        # Clean up model output to find JSON
-        text = text.strip()
-        # If model prints extra text before JSON, try to find first { and last }
         first = text.find("{")
         last = text.rfind("}")
-        if first != -1 and last != -1:
-            json_text = text[first:last+1]
-        else:
-            json_text = text
+        json_text = text[first:last+1] if first!=-1 and last!=-1 else text
         suggestions = json.loads(json_text)
-        # Ensure fields exist
-        return {
-            "suggested_title": suggestions.get("suggested_title",""),
-            "suggested_meta": suggestions.get("suggested_meta",""),
-            "short_summary": suggestions.get("short_summary",""),
-            "issues": suggestions.get("issues",[]),
-            "fixes": suggestions.get("fixes",[]),
-            "keywords": suggestions.get("keywords",[]),
-            "content_quality_score": suggestions.get("content_quality_score", 0)
-        }
-    except Exception as e:
-        # On any failure, return None so caller can fallback
+        return {k:suggestions.get(k,"") if k!="issues" and k!="fixes" and k!="keywords" else suggestions.get(k,[]) for k in ["suggested_title","suggested_meta","short_summary","issues","fixes","keywords","content_quality_score"]}
+    except Exception:
         return None
 
-# ---------------- Rule-based fallback suggestion generator ----------------
 def rule_based_suggestions(data):
     title = data.get("title","") or ""
     meta = data.get("meta","") or ""
     summary = data.get("summary","") or ""
     words = data.get("word_count",0)
-    issues = []
-    fixes = []
-    keywords = []
-
-    if len(title) < 40:
+    issues, fixes, keywords = [], [], []
+    if len(title)<40:
         issues.append("Title too short")
-        fixes.append("Make title more descriptive and include primary subject and verb.")
-    if len(title) > 70:
+        fixes.append("Make title more descriptive including subject and verb.")
+    if len(title)>70:
         issues.append("Title too long")
-        fixes.append("Shorten title to 50-70 characters focusing on main entity.")
-    if not meta or len(meta) < 80:
+        fixes.append("Shorten title to 50-70 characters focusing main entity.")
+    if not meta or len(meta)<80:
         issues.append("Weak meta")
-        fixes.append("Write a 120-155 character meta summarizing key facts and hook.")
-    if words < 400:
+        fixes.append("Write a 120-155 char meta summarizing key facts.")
+    if words<400:
         issues.append("Short content")
-        fixes.append("Add background, quotes and context to reach 600+ words.")
-    if data.get("img_count",0) < 1:
+        fixes.append("Add context, quotes to reach 600+ words.")
+    if data.get("img_count",0)<1:
         issues.append("Few images")
-        fixes.append("Add at least one relevant image with descriptive alt text.")
-    # simple keyword candidates from title words
+        fixes.append("Add at least one image with alt text.")
     for w in re.findall(r"\w+", title):
-        if len(w) > 4:
-            keywords.append(w.lower())
+        if len(w)>4: keywords.append(w.lower())
     keywords = list(dict.fromkeys(keywords))[:5]
-
     suggested_title = title if title else ((" ".join(keywords[:3])[:60]) or "Suggested Headline")
-    suggested_meta = (meta[:155] + "...") if len(meta) > 155 else (meta or (summary[:150] + "..."))
+    suggested_meta = (meta[:155]+"...") if len(meta)>155 else (meta or (summary[:150]+"..."))
     return {
         "suggested_title": suggested_title,
         "suggested_meta": suggested_meta,
@@ -349,8 +286,11 @@ def rule_based_suggestions(data):
         "issues": issues,
         "fixes": fixes,
         "keywords": keywords,
-        "content_quality_score": min(90, max(30, int((words/1000)*100)))  # rough proxy
+        "content_quality_score": min(90,max(30,int((words/1000)*100)))
     }
+
+# ---------------- Remaining code (Excel formatting + UI) ----------------
+# (Ye part exactly same hai jaise aapka existing code me tha, no changes required)
 
 # ---------------- EXCEL FORMATTER ----------------
 def apply_excel_formatting(workbook_bytes):
@@ -574,3 +514,4 @@ if process:
             file_name="SEO_Audit_Final_with_OpenAI.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
