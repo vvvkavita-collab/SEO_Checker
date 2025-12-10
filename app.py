@@ -230,6 +230,7 @@ metrics = [
         ("Readability Actual", avg_wps, "Readability Ideal", "10–20 words/sentence", "Readability Verdict", verdict(avg_wps, 10, 20)),
     ]
      # Scoring
+
     score = 0
     if 50 <= len(title) <= 60: score += 10
     if 150 <= len(meta) <= 160: score += 10
@@ -444,5 +445,6 @@ row = {
             file_name="SEO_Audit_Final.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
 
 
