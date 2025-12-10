@@ -98,7 +98,6 @@ REQ_HEADERS = {
 # ---------------- ARTICLE EXTRACTOR ----------------
 def extract_article(url):
     try:
-        # Ensure scheme
         if not url.lower().startswith(("http://", "https://")):
             url = "https://" + url.lstrip("/")
         r = requests.get(url, headers=REQ_HEADERS, timeout=25, allow_redirects=True)
@@ -110,7 +109,7 @@ def extract_article(url):
         md = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", attrs={"property": "og:description"})
         meta_desc = md.get("content").strip() if md and md.get("content") else ""
 
-# Text content
+        # Text content
         paras = soup.find_all("p")
         article = ".".join([safe_get_text(p) for p in paras]).strip()
         article = re.sub(r"\s+", " ", article)
@@ -139,7 +138,6 @@ def extract_article(url):
             else:
                 internal_links += 1
 
-        # Counts
         paragraph_count = len([p for p in paras if safe_get_text(p)])
         sentences = re.split(r"[.!?]\s+", article)
         sentence_count = len([s for s in sentences if s.strip()])
@@ -216,7 +214,7 @@ def seo_analysis_struct(data):
     external_links = data["external_links"]
     avg_wps = data["avg_words_per_sentence"]
 
-metrics = [
+    metrics = [
         ("Title Length Actual", len(title), "Title Length Ideal", "50–60 characters", "Title Verdict", verdict(len(title), 50, 60)),
         ("Meta Length Actual", len(meta), "Meta Length Ideal", "150–160 characters", "Meta Verdict", verdict(len(meta), 150, 160)),
         ("H1 Count Actual", h1_count, "H1 Count Ideal", "Exactly 1", "H1 Verdict", verdict(h1_count, ideal_exact=1)),
@@ -229,7 +227,7 @@ metrics = [
         ("External Links Actual", external_links, "External Links Ideal", "2–4", "External Links Verdict", verdict(external_links, 2, 4)),
         ("Readability Actual", avg_wps, "Readability Ideal", "10–20 words/sentence", "Readability Verdict", verdict(avg_wps, 10, 20)),
     ]
-     
+
     # Scoring
     score = 0
     if 50 <= len(title) <= 60: score += 10
@@ -297,7 +295,7 @@ def apply_excel_formatting(workbook_bytes):
             if c and cond:
                 c.fill = red_fill
 
-mark_red("Title Length Actual", not (50 <= (num(val("Title Length Actual")) or -1) <= 60))
+        mark_red("Title Length Actual", not (50 <= (num(val("Title Length Actual")) or -1) <= 60))
         mark_red("Meta Length Actual", not (150 <= (num(val("Meta Length Actual")) or -1) <= 160))
         mark_red("H1 Count Actual", (num(val("H1 Count Actual")) or -1) != 1)
         mark_red("H2 Count Actual", not (2 <= (num(val("H2 Count Actual")) or -1) <= 5))
@@ -342,7 +340,7 @@ if "merged_urls" not in st.session_state:
 uploaded = st.file_uploader("Upload URL List (TXT/CSV/XLSX)", type=["txt", "csv", "xlsx"])
 urls_input = st.text_area("Paste URLs here", value=st.session_state.merged_urls, height=220)
 
-# Merge uploaded into session_state (reliable across reruns)
+# Merge uploaded into session_state
 if uploaded is not None:
     try:
         if uploaded.type == "text/plain":
@@ -357,7 +355,6 @@ if uploaded is not None:
         st.info("File processed. Merged into the text area below.")
         existing = urls_input.strip()
         st.session_state.merged_urls = (existing + "\n" + uploaded_urls).strip() if existing else uploaded_urls
-        # Reflect immediately in the textarea
         urls_input = st.session_state.merged_urls
     except Exception as e:
         st.error(f"Failed to read uploaded file: {e}")
@@ -368,7 +365,6 @@ if process:
     if not urls_input.strip():
         st.error("Please paste some URLs or upload a file.")
     else:
-        # Build clean URL list (remove duplicates while preserving order)
         seen = set()
         urls = []
         for u in urls_input.splitlines():
@@ -385,17 +381,16 @@ if process:
 
         for i, url in enumerate(urls, start=1):
             status.text(f"Processing {i}/{len(urls)} : {url}")
-            data = extract_article(url)  # Per‑URL fresh fetch with strong headers
+            data = extract_article(url)
             score, grade, metrics, extras = seo_analysis_struct(data)
 
-row = {
+            row = {
                 "URL": url,
                 "Summary": extras["Summary"],
                 "SEO Score": score,
                 "SEO Grade": grade,
             }
 
-            # Add Actual + Ideal + Verdict for each essential metric
             for actual_h, actual_v, ideal_h, ideal_v, verdict_h, verdict_v in metrics:
                 row[actual_h] = actual_v
                 row[ideal_h] = ideal_v
@@ -405,47 +400,17 @@ row = {
             progress.progress(int((i / len(urls)) * 100))
 
         df = pd.DataFrame(rows)
+        st.success("✅ SEO Report generated successfully!")
+        st.dataframe(df, use_container_width=True)
 
-        # Excel: Audit + Column Definitions sheets
-        out = BytesIO()
-        with pd.ExcelWriter(out, engine="openpyxl") as writer:
+        excel_bytes = BytesIO()
+        with pd.ExcelWriter(excel_bytes, engine="openpyxl") as writer:
             df.to_excel(writer, index=False, sheet_name="Audit")
+        formatted_bytes = apply_excel_formatting(excel_bytes.getvalue())
 
-            # Create Column Definitions sheet (ONLY IDEAL HEADINGS)
-            wb = writer.book
-            ws_def = wb.create_sheet("Column Definitions")
-            ws_def.append(["Ideal Column Heading", "Meaning (Kya hai)", "Why Important (Kyu zaruri)"])
-
-            ideal_definitions = [
-                ("Title Length Ideal", "Recommended title length", "Fits search snippet, readable headline, improves CTR"),
-                ("Meta Length Ideal", "Recommended meta description length", "Fits Google snippet, persuasive summary without truncation"),
-                ("H1 Count Ideal", "Exactly one H1 tag", "Clear main headline, avoids confusion for users and crawlers"),
-                ("H2 Count Ideal", "2–5 H2 subheadings", "Improves structure and readability, helps users scan content"),
-                ("Content Length Ideal", "600+ words in article", "Shows depth and authority, increases dwell time and trust"),
-                ("Paragraph Count Ideal", "8+ paragraphs", "Makes content scannable, reduces fatigue, improves UX"),
-                ("Image Count Ideal", "3+ images", "Boosts visual engagement, breaks monotony, supports storytelling"),
-                ("Alt Tags Ideal", "All images have alt text", "Accessibility compliance, better image SEO and context"),
-                ("Internal Links Ideal", "2–5 internal links", "Guides readers to related content, improves site navigation and retention"),
-                ("External Links Ideal", "2–4 external links", "Adds credibility via trusted references, supports fact-checking"),
-                ("Readability Ideal", "10–20 words per sentence", "Natural flow, easier comprehension, reduces cognitive load"),
-            ]
-
-            for row in ideal_definitions:
-                ws_def.append(row)
-
-            for col in ws_def.columns:
-                ws_def.column_dimensions[col[0].column_letter].width = 32
-
-        final_bytes = apply_excel_formatting(out.getvalue())
-
-        st.success("🎉 Report created successfully!")
         st.download_button(
-            "Download SEO Audit Excel",
-            data=final_bytes,
-            file_name="SEO_Audit_Final.xlsx",
+            label="📥 Download Styled SEO Report",
+            data=formatted_bytes,
+            file_name="SEO_Audit_Report.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-
-
-
-
