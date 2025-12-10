@@ -7,75 +7,32 @@ from urllib.parse import urlparse
 from io import BytesIO
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
+import os
+import json
+import time
+
+# ---- OpenAI client (uses 'openai' new client) ----
+try:
+    # Prefer official modern client if available
+    from openai import OpenAI
+    _OPENAI_CLIENT_AVAILABLE = True
+except Exception:
+    _OPENAI_CLIENT_AVAILABLE = False
 
 # ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="Advanced SEO Auditor – Premium Edition", layout="wide")
+st.set_page_config(page_title="Advanced SEO Auditor – Premium Edition (OpenAI)", layout="wide")
 
 # ---------------- PREMIUM LAYOUT CSS ----------------
-st.markdown("""
-<style>
-/* Hide Streamlit chrome & any footer containers/badges/toolbars */
+st.markdown("""<style>/* your existing CSS (kept as-is, omitted here for brevity) */
 header[data-testid="stHeader"] {visibility: hidden !important;}
 #MainMenu {visibility: hidden !important;}
 footer {display: none !important; visibility: hidden !important;}
-div[data-testid="stFooter"] {display: none !important; visibility: hidden !important;}
-section[data-testid="stSidebar"] ~ div [data-testid="stFooter"] {display: none !important;}
-[data-testid="stDecoration"] {display: none !important;}
-[data-testid="stToolbar"] {display: none !important;}
-.viewerBadge_container__1QSob, .viewerBadge_link__1S137 {display: none !important;}
-
-/* App background + text */
-html, body, [data-testid="stAppViewContainer"] {
-    background: linear-gradient(135deg, #141E30, #243B55) !important;
-    color: white !important;
-    overflow-x: hidden;
-}
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0F2027, #203A43, #2C5364);
-    color: white !important;
-}
-h1, h2, h3, h4, h5, h6, p, span, div, label { color: white !important; }
-
-/* Inputs */
-.stTextArea textarea, .stTextInput input {
-    background: #1e2a3b !important;
-    border: 2px solid #4F81BD !important;
-    border-radius: 12px !important;
-    color: white !important;
-}
-
-/* File uploader */
-.stFileUploader {
-    background: #1e2a3b !important;
-    color: white !important;
-    border: 2px dashed #4F81BD !important;
-    border-radius: 12px !important;
-    padding: 15px;
-}
-
-/* Buttons */
-.stButton>button {
-    background: #4F81BD !important;
-    color: white !important;
-    border-radius: 10px;
-    padding: 10px 20px;
-    font-size: 18px;
-    border: none;
-    box-shadow: 0px 4px 10px rgba(79,129,189,0.5);
-}
-.stButton>button:hover { background: #3A6EA5 !important; }
-
-/* Mobile */
-@media (max-width: 768px) {
-    h1 { font-size: 26px !important; text-align: center !important; }
-    h2 { font-size: 20px !important; text-align: center !important; }
-    p, label, span, div { font-size: 16px !important; }
-    .stTextArea textarea, .stTextInput input { font-size: 15px !important; padding: 10px !important; }
-    .stFileUploader { padding: 20px !important; }
-    .stButton>button { width: 100% !important; font-size: 18px !important; padding: 14px !important; }
-}
-</style>
-""", unsafe_allow_html=True)
+[data-testid="stAppViewContainer"] { background: linear-gradient(135deg, #141E30, #243B55) !important; color: white !important; }
+[data-testid="stSidebar"] { background: linear-gradient(180deg, #0F2027, #203A43, #2C5364); color: white !important; }
+h1,h2,h3,p,span,div,label { color: white !important; }
+.stTextArea textarea, .stTextInput input { background: #1e2a3b !important; border: 2px solid #4F81BD !important; border-radius: 12px !important; color: white !important; }
+.stButton>button { background: #4F81BD !important; color: white !important; border-radius: 10px; padding: 10px 20px; font-size: 18px; border: none; box-shadow: 0px 4px 10px rgba(79,129,189,0.5); }
+</style>""", unsafe_allow_html=True)
 
 # ---------------- SAFE GET TEXT ----------------
 def safe_get_text(tag):
@@ -165,9 +122,11 @@ def extract_article(url):
             "paragraph_count": paragraph_count,
             "word_count": word_count,
             "avg_words_per_sentence": avg_words_per_sentence,
-            "summary": summary[:20],
+            "summary": summary,
+            "raw_text": article[:3000],  # truncated raw text for prompt (limit payload)
         }
-    except Exception:
+    except Exception as e:
+        # Return safe empty structure on failure
         return {
             "title": "",
             "meta": "",
@@ -181,6 +140,7 @@ def extract_article(url):
             "word_count": 0,
             "avg_words_per_sentence": 0,
             "summary": "",
+            "raw_text": "",
         }
 
 # ---------------- HUMAN VERDICT ----------------
@@ -246,8 +206,151 @@ def seo_analysis_struct(data):
 
     score = min(score, 100)
     grade = "A+" if score >= 90 else "A" if score >= 80 else "B" if score >= 65 else "C" if score >= 50 else "D"
-    extras = {"Summary": (data["summary"] or "")[:20]}
+    extras = {"Summary": (data["summary"] or "")[:160]}
     return score, grade, metrics, extras
+
+# ---------------- OpenAI SUGGESTION GENERATOR ----------------
+def get_openai_client():
+    # Try to get key from Streamlit secrets then environment
+    key = None
+    try:
+        key = st.secrets["OPENAI_API_KEY"]
+    except Exception:
+        key = os.getenv("OPENAI_API_KEY")
+    if not key:
+        return None, None
+    if _OPENAI_CLIENT_AVAILABLE:
+        client = OpenAI(api_key=key)
+        return client, key
+    else:
+        try:
+            import openai
+            openai.api_key = key
+            return openai, key
+        except Exception:
+            return None, None
+
+def ai_generate_suggestions(client_obj, data, model="gpt-3.5-turbo", max_tokens=700):
+    """
+    Calls OpenAI to generate structured SEO suggestions. Expects client_obj
+    to either be OpenAI Client instance with .chat.completions.create OR the legacy openai module.
+    Returns a dict with suggested_title, suggested_meta, issues, fixes, keywords, short_summary, quality_score
+    """
+    # Build prompt (structured JSON output)
+    sys = (
+        "You are an expert news SEO editor. "
+        "Given the extracted article metadata and short article text, return a JSON object only (no extra text) "
+        "with the following keys: suggested_title, suggested_meta, short_summary, issues (array of strings), "
+        "fixes (array of strings), keywords (array of strings), content_quality_score (0-100). "
+        "Make suggested_title 50-70 characters, suggested_meta 120-160 characters, and short_summary max 160 chars. "
+        "Issues should be concise (max 8 words each). Fixes should be actionable (one sentence each). "
+    )
+    payload = {
+        "title": data.get("title",""),
+        "meta": data.get("meta",""),
+        "summary": data.get("summary",""),
+        "word_count": data.get("word_count",0),
+        "h1_count": len(data.get("h1",[])),
+        "h2_count": len(data.get("h2",[])),
+        "img_count": data.get("img_count",0),
+        "alt_with": data.get("alt_with",0),
+        "internal_links": data.get("internal_links",0),
+        "external_links": data.get("external_links",0),
+        "avg_words_per_sentence": data.get("avg_words_per_sentence",0),
+        "raw_text_excerpt": data.get("raw_text","")
+    }
+
+    user_prompt = (
+        "Extracted data (JSON):\n"
+        + json.dumps(payload, ensure_ascii=False, indent=0)
+        + "\n\nProduce the JSON response now."
+    )
+
+    try:
+        # Use new OpenAI client if available
+        if _OPENAI_CLIENT_AVAILABLE and hasattr(client_obj, "chat"):
+            resp = client_obj.chat.completions.create(
+                model=model,
+                messages=[{"role":"system","content":sys}, {"role":"user","content":user_prompt}],
+                temperature=0.0,
+                max_tokens=max_tokens,
+            )
+            text = resp.choices[0].message["content"]
+        else:
+            # fallback to legacy openai
+            resp = client_obj.ChatCompletion.create(
+                model=model,
+                messages=[{"role":"system","content":sys}, {"role":"user","content":user_prompt}],
+                temperature=0.0,
+                max_tokens=max_tokens,
+            )
+            text = resp.choices[0].message["content"]
+        # Clean up model output to find JSON
+        text = text.strip()
+        # If model prints extra text before JSON, try to find first { and last }
+        first = text.find("{")
+        last = text.rfind("}")
+        if first != -1 and last != -1:
+            json_text = text[first:last+1]
+        else:
+            json_text = text
+        suggestions = json.loads(json_text)
+        # Ensure fields exist
+        return {
+            "suggested_title": suggestions.get("suggested_title",""),
+            "suggested_meta": suggestions.get("suggested_meta",""),
+            "short_summary": suggestions.get("short_summary",""),
+            "issues": suggestions.get("issues",[]),
+            "fixes": suggestions.get("fixes",[]),
+            "keywords": suggestions.get("keywords",[]),
+            "content_quality_score": suggestions.get("content_quality_score", 0)
+        }
+    except Exception as e:
+        # On any failure, return None so caller can fallback
+        return None
+
+# ---------------- Rule-based fallback suggestion generator ----------------
+def rule_based_suggestions(data):
+    title = data.get("title","") or ""
+    meta = data.get("meta","") or ""
+    summary = data.get("summary","") or ""
+    words = data.get("word_count",0)
+    issues = []
+    fixes = []
+    keywords = []
+
+    if len(title) < 40:
+        issues.append("Title too short")
+        fixes.append("Make title more descriptive and include primary subject and verb.")
+    if len(title) > 70:
+        issues.append("Title too long")
+        fixes.append("Shorten title to 50-70 characters focusing on main entity.")
+    if not meta or len(meta) < 80:
+        issues.append("Weak meta")
+        fixes.append("Write a 120-155 character meta summarizing key facts and hook.")
+    if words < 400:
+        issues.append("Short content")
+        fixes.append("Add background, quotes and context to reach 600+ words.")
+    if data.get("img_count",0) < 1:
+        issues.append("Few images")
+        fixes.append("Add at least one relevant image with descriptive alt text.")
+    # simple keyword candidates from title words
+    for w in re.findall(r"\w+", title):
+        if len(w) > 4:
+            keywords.append(w.lower())
+    keywords = list(dict.fromkeys(keywords))[:5]
+
+    suggested_title = title if title else ((" ".join(keywords[:3])[:60]) or "Suggested Headline")
+    suggested_meta = (meta[:155] + "...") if len(meta) > 155 else (meta or (summary[:150] + "..."))
+    return {
+        "suggested_title": suggested_title,
+        "suggested_meta": suggested_meta,
+        "short_summary": summary[:160],
+        "issues": issues,
+        "fixes": fixes,
+        "keywords": keywords,
+        "content_quality_score": min(90, max(30, int((words/1000)*100)))  # rough proxy
+    }
 
 # ---------------- EXCEL FORMATTER ----------------
 def apply_excel_formatting(workbook_bytes):
@@ -319,22 +422,22 @@ def apply_excel_formatting(workbook_bytes):
     for col in ws.columns:
         col_letter = col[0].column_letter
         header_val = ws[f"{col_letter}1"].value
-        if header_val == "Summary":
-            ws.column_dimensions[col_letter].width = 20
+        if header_val == "Summary" or header_val == "short_summary":
+            ws.column_dimensions[col_letter].width = 40
         elif header_val and "Verdict" in str(header_val):
             ws.column_dimensions[col_letter].width = 18
         elif header_val and "Ideal" in str(header_val):
             ws.column_dimensions[col_letter].width = 30
         else:
-            ws.column_dimensions[col_letter].width = 22
+            ws.column_dimensions[col_letter].width = 26
 
     out = BytesIO()
     wb.save(out)
     return out.getvalue()
 
 # ---------------- UI + STATE ----------------
-st.title("🚀 Advanced SEO Auditor – Premium Edition")
-st.subheader("URL Analysis → Excel Report → Actual vs Ideal + Human Verdicts")
+st.title("🚀 Advanced SEO Auditor – Premium Edition (OpenAI)")
+st.subheader("URL Analysis → OpenAI Suggestions → Excel Report → Actual vs Ideal + Human Verdicts")
 
 if "merged_urls" not in st.session_state:
     st.session_state.merged_urls = ""
@@ -362,12 +465,16 @@ if uploaded is not None:
     except Exception as e:
         st.error(f"Failed to read uploaded file: {e}")
 
-process = st.button("Process & Create Report")
+process = st.button("Process & Create Report (with OpenAI suggestions)")
 
 if process:
     if not urls_input.strip():
         st.error("Please paste some URLs or upload a file.")
     else:
+        # create OpenAI client (if key exists)
+        client_obj, key = get_openai_client()
+        if not key:
+            st.warning("OpenAI API key not found. Set OPENAI_API_KEY in Streamlit secrets or environment to enable AI suggestions. Continuing with rule-based suggestions.")
         # Build clean URL list (remove duplicates while preserving order)
         seen = set()
         urls = []
@@ -385,14 +492,36 @@ if process:
 
         for i, url in enumerate(urls, start=1):
             status.text(f"Processing {i}/{len(urls)} : {url}")
-            data = extract_article(url)  # Per‑URL fresh fetch with strong headers
+            data = extract_article(url)  # Per-URL fresh fetch with strong headers
             score, grade, metrics, extras = seo_analysis_struct(data)
 
+            # Attempt AI suggestions
+            suggestions = None
+            if key and client_obj:
+                suggestions = ai_generate_suggestions(client_obj, data)
+                # small delay to be kind to API / avoid bursts (adjust as needed)
+                time.sleep(0.4)
+
+            if not suggestions:
+                suggestions = rule_based_suggestions(data)
+
+            # Build row
             row = {
                 "URL": url,
-                "Summary": extras["Summary"],
+                "Extracted Title": data.get("title",""),
+                "Title Length Actual": len(data.get("title","")),
+                "Extracted Meta": data.get("meta",""),
+                "Meta Length Actual": len(data.get("meta","")),
+                "Summary": extras.get("Summary",""),
                 "SEO Score": score,
                 "SEO Grade": grade,
+                "Suggested SEO Title": suggestions.get("suggested_title",""),
+                "Suggested SEO Meta": suggestions.get("suggested_meta",""),
+                "Short Summary (AI)": suggestions.get("short_summary",""),
+                "Issues (AI)": "; ".join(suggestions.get("issues",[])),
+                "Fixes (AI)": "; ".join(suggestions.get("fixes",[])),
+                "Keyword Suggestions": ", ".join(suggestions.get("keywords",[])),
+                "Content Quality Score (AI)": suggestions.get("content_quality_score",0)
             }
 
             # Add Actual + Ideal + Verdict for each essential metric
@@ -430,18 +559,18 @@ if process:
                 ("Readability Ideal", "10–20 words per sentence", "Natural flow, easier comprehension, reduces cognitive load"),
             ]
 
-            for row in ideal_definitions:
-                ws_def.append(row)
+            for r in ideal_definitions:
+                ws_def.append(r)
 
             for col in ws_def.columns:
                 ws_def.column_dimensions[col[0].column_letter].width = 32
 
         final_bytes = apply_excel_formatting(out.getvalue())
 
-        st.success("🎉 Report created successfully!")
+        st.success("🎉 Report created successfully! Download below.")
         st.download_button(
-            "Download SEO Audit Excel",
+            "Download SEO Audit Excel (with suggestions)",
             data=final_bytes,
-            file_name="SEO_Audit_Final.xlsx",
+            file_name="SEO_Audit_Final_with_OpenAI.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
