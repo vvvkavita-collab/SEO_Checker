@@ -1,4 +1,3 @@
-Piyush Vashisth, [12/10/2025 3:45 PM]
 import streamlit as st
 import pandas as pd
 import requests
@@ -111,7 +110,6 @@ def extract_article(url):
         md = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", attrs={"property": "og:description"})
         meta_desc = md.get("content").strip() if md and md.get("content") else ""
 
-Piyush Vashisth, [12/10/2025 3:45 PM]
 # Text content
         paras = soup.find_all("p")
         article = ".".join([safe_get_text(p) for p in paras]).strip()
@@ -218,7 +216,6 @@ def seo_analysis_struct(data):
     external_links = data["external_links"]
     avg_wps = data["avg_words_per_sentence"]
 
-Piyush Vashisth, [12/10/2025 3:45 PM]
 metrics = [
         ("Title Length Actual", len(title), "Title Length Ideal", "50–60 characters", "Title Verdict", verdict(len(title), 50, 60)),
         ("Meta Length Actual", len(meta), "Meta Length Ideal", "150–160 characters", "Meta Verdict", verdict(len(meta), 150, 160)),
@@ -300,7 +297,6 @@ def apply_excel_formatting(workbook_bytes):
             if c and cond:
                 c.fill = red_fill
 
-Piyush Vashisth, [12/10/2025 3:45 PM]
 mark_red("Title Length Actual", not (50 <= (num(val("Title Length Actual")) or -1) <= 60))
         mark_red("Meta Length Actual", not (150 <= (num(val("Meta Length Actual")) or -1) <= 160))
         mark_red("H1 Count Actual", (num(val("H1 Count Actual")) or -1) != 1)
@@ -392,7 +388,6 @@ if process:
             data = extract_article(url)  # Per‑URL fresh fetch with strong headers
             score, grade, metrics, extras = seo_analysis_struct(data)
 
-Piyush Vashisth, [12/10/2025 3:45 PM]
 row = {
                 "URL": url,
                 "Summary": extras["Summary"],
@@ -450,3 +445,4 @@ row = {
             file_name="SEO_Audit_Final.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
