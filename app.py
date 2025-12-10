@@ -195,7 +195,7 @@ def seo_analysis_struct(data):
 # ---------------- OpenAI SUGGESTION GENERATOR ----------------
 def get_openai_client():
     # === Directly add your OpenAI API key here ===
-    key = "YOUR_OPENAI_API_KEY_HERE"   # <<--- Replace this with your actual OpenAI API key
+    key = "AIzaSyDN8yBeXcnXpsS7XRrX52nIaqLvo3et8wA"   # <<--- Replace this with your actual OpenAI API key
     
     if not key:
         return None, None
@@ -514,4 +514,5 @@ if process:
             file_name="SEO_Audit_Final_with_OpenAI.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
 
