@@ -40,7 +40,7 @@ REQ_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9"
 }
 
-# ---------------- ARTICLE EXTRACTOR ----------------
+# ---------------- ARTICLE EXTRACTOR (MAIN CONTENT ONLY) ----------------
 def extract_article(url):
     try:
         if not url.lower().startswith(("http://","https://")):
@@ -49,22 +49,29 @@ def extract_article(url):
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
+        # ---------------- FOCUS ONLY ON MAIN ARTICLE ----------------
+        article_container = soup.find("div", {"class": re.compile(r"article-content|content|story|entry", re.I)}) \
+                           or soup.find("article") \
+                           or soup.find("div", {"id": re.compile(r"article|content|story", re.I)})
+        if not article_container:
+            article_container = soup.body  # fallback to whole body if no article container
+
         title = soup.title.string.strip() if soup.title and soup.title.string else ""
         md = soup.find("meta", attrs={"name":"description"}) or soup.find("meta", attrs={"property":"og:description"})
         meta_desc = md.get("content").strip() if md and md.get("content") else ""
 
-        paras = soup.find_all("p")
-        article = " ".join([safe_get_text(p) for p in paras])
-        article = re.sub(r"\s+", " ", article)
+        paras = article_container.find_all("p")
+        article_text = " ".join([safe_get_text(p) for p in paras])
+        article_text = re.sub(r"\s+", " ", article_text)
 
-        h1 = [safe_get_text(t) for t in soup.find_all("h1")]
-        h2 = [safe_get_text(t) for t in soup.find_all("h2")]
+        h1 = [safe_get_text(t) for t in article_container.find_all("h1")]
+        h2 = [safe_get_text(t) for t in article_container.find_all("h2")]
 
-        imgs = soup.find_all("img")
+        imgs = article_container.find_all("img")
         img_count = len(imgs)
         alt_with = sum(1 for im in imgs if (im.get("alt") or "").strip())
 
-        anchors = soup.find_all("a")
+        anchors = article_container.find_all("a")
         internal_links = 0
         external_links = 0
         domain = urlparse(url).netloc.lower()
@@ -79,9 +86,9 @@ def extract_article(url):
                 internal_links += 1
 
         paragraph_count = len([p for p in paras if safe_get_text(p)])
-        sentences = re.split(r"[.!?]\s+", article)
+        sentences = re.split(r"[.!?]\s+", article_text)
         sentence_count = len([s for s in sentences if s.strip()])
-        words = article.split()
+        words = article_text.split()
         word_count = len(words)
         avg_words_per_sentence = round(word_count / max(1,sentence_count),2)
         summary = ""
@@ -172,7 +179,7 @@ def seo_analysis_struct(data):
     if 2<=external_links<=4: score+=4
     if 10<=avg_wps<=20: score+=8
     score = min(score,100)
-
+    # Grade calculation fix
     if score>=90: grade="A+"
     elif score>=80: grade="A"
     elif score>=65: grade="B"
@@ -229,7 +236,7 @@ def apply_excel_formatting(workbook_bytes):
             for cell in row:
                 cell.alignment = center_wrap
                 cell.border = thin_border
-        # Red highlight only in Audit sheet
+        # red highlight only in Audit sheet
         if sheet_name=="Audit":
             headers = [c.value for c in ws[1]]
             for row in ws.iter_rows(min_row=2):
