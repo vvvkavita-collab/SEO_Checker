@@ -172,13 +172,20 @@ def seo_analysis_struct(data):
     if 2<=external_links<=4: score+=4
     if 10<=avg_wps<=20: score+=8
     score = min(score,100)
-    grade = "A+" if score>=90 else "A" if score>=80 else "B" if score>=65 else "C" if score>=50 else "D"
+    # Grade calculation fix
+    if score>=90: grade="A+"
+    elif score>=80: grade="A"
+    elif score>=65: grade="B"
+    elif score>=50: grade="C"
+    else: grade="D"
+
     extras = {"Summary": (data["summary"] or "")[:20]}
     return score, grade, metrics, extras
 
 # ---------------- COLUMN GUIDE ----------------
 def get_column_guide_df():
     data = [
+        ("Column Name","Meaning","Ideal","SEO Impact"),
         ("SEO Score","Overall SEO performance score","80+","Higher score = better ranking"),
         ("SEO Grade","Grade based on SEO Score","A/A+","Quick quality indicator"),
         ("Title Length Actual","Number of characters in page title","50–60 characters","Too short/long reduces CTR"),
@@ -194,72 +201,64 @@ def get_column_guide_df():
         ("Readability Actual","Average words per sentence","10–20 words","Easier to read"),
         ("Summary","Short content preview","Clear & meaningful","Helps editors quickly")
     ]
-    return pd.DataFrame(data, columns=["Column Name","Meaning","Ideal","SEO Impact"])
+    return pd.DataFrame(data[1:], columns=data[0])
 
 # ---------------- EXCEL FORMATTING ----------------
 def apply_excel_formatting(workbook_bytes):
     wb = load_workbook(BytesIO(workbook_bytes))
-    ws = wb["Audit"]
-    ws.sheet_view.showGridLines = False
-
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill("solid", fgColor="4F81BD")  # Light blue
-    red_fill = PatternFill("solid", fgColor="FF7F7F")
+    center_wrap = Alignment(horizontal="center", vertical="center", wrap_text=True)
     thin_border = Border(left=Side(style="thin", color="4F81BD"),
                          right=Side(style="thin", color="4F81BD"),
                          top=Side(style="thin", color="4F81BD"),
                          bottom=Side(style="thin", color="4F81BD"))
-    center_wrap = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="4F81BD")
+    red_fill = PatternFill("solid", fgColor="FF7F7F")
 
-    # Style headers
-    for cell in ws[1]:
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = center_wrap
-        cell.border = thin_border
-
-    headers = [c.value for c in ws[1]]
-
-    def num(v):
-        try:
-            return float(v)
-        except:
-            return None
-
-    # Highlight failing Actuals + Center align + wrap text
-    for row in ws.iter_rows(min_row=2):
-        lookup = {headers[i]: row[i] for i in range(len(headers))}
-        def val(h): c=lookup.get(h); return c.value if c else None
-        def mark_red(h, cond):
-            c=lookup.get(h)
-            if c and cond: c.fill=red_fill
-
-        mark_red("Title Length Actual", not(50 <= (num(val("Title Length Actual")) or -1) <= 60))
-        mark_red("Meta Length Actual", not(150 <= (num(val("Meta Length Actual")) or -1) <= 160))
-        mark_red("H1 Count Actual",(num(val("H1 Count Actual")) or -1)!=1)
-        mark_red("H2 Count Actual",not(2 <= (num(val("H2 Count Actual")) or -1) <= 5))
-        mark_red("Content Length Actual",(num(val("Content Length Actual")) or -1)<600)
-        mark_red("Paragraph Count Actual",(num(val("Paragraph Count Actual")) or -1)<8)
-        mark_red("Image Count Actual",(num(val("Image Count Actual")) or -1)<3)
-        img_actual = num(val("Image Count Actual")) or 0
-        alt_actual = num(val("Alt Tags Actual")) or 0
-        mark_red("Alt Tags Actual",alt_actual<img_actual)
-        mark_red("Internal Links Actual",not(2 <= (num(val("Internal Links Actual")) or -1) <= 5))
-        mark_red("External Links Actual",not(2 <= (num(val("External Links Actual")) or -1) <= 4))
-        mark_red("Readability Actual",not(10 <= (num(val("Readability Actual")) or -1) <= 20))
-
-        for cell in row:
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        ws.sheet_view.showGridLines = False
+        # headers
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
             cell.alignment = center_wrap
             cell.border = thin_border
+        # data rows
+        for row in ws.iter_rows(min_row=2):
+            for cell in row:
+                cell.alignment = center_wrap
+                cell.border = thin_border
+        # red highlight only in Audit sheet
+        if sheet_name=="Audit":
+            headers = [c.value for c in ws[1]]
+            for row in ws.iter_rows(min_row=2):
+                lookup={headers[i]:row[i] for i in range(len(headers))}
+                def val(h): c=lookup.get(h); return c.value if c else None
+                def mark_red(h,cond): c=lookup.get(h); 
+                if c and cond: c.fill=red_fill
+                mark_red("Title Length Actual", not(50 <= (float(val("Title Length Actual") or 0) <= 60))
+                mark_red("Meta Length Actual", not(150 <= (float(val("Meta Length Actual") or 0) <=160))
+                mark_red("H1 Count Actual",(float(val("H1 Count Actual") or 0)!=1))
+                mark_red("H2 Count Actual",not(2 <= (float(val("H2 Count Actual") or 0) <=5))
+                mark_red("Content Length Actual",(float(val("Content Length Actual") or 0)<600))
+                mark_red("Paragraph Count Actual",(float(val("Paragraph Count Actual") or 0)<8))
+                mark_red("Image Count Actual",(float(val("Image Count Actual") or 0)<3))
+                img_actual=float(val("Image Count Actual") or 0)
+                alt_actual=float(val("Alt Tags Actual") or 0)
+                mark_red("Alt Tags Actual", alt_actual<img_actual)
+                mark_red("Internal Links Actual",not(2 <= (float(val("Internal Links Actual") or 0) <=5))
+                mark_red("External Links Actual",not(2 <= (float(val("External Links Actual") or 0) <=4))
+                mark_red("Readability Actual",not(10 <= (float(val("Readability Actual") or 0) <=20))
 
-    # Column widths
-    for col in ws.columns:
-        col_letter = col[0].column_letter
-        header_val = ws[f"{col_letter}1"].value
-        if header_val=="Summary": ws.column_dimensions[col_letter].width=25
-        elif header_val and "Verdict" in str(header_val): ws.column_dimensions[col_letter].width=18
-        elif header_val and "Ideal" in str(header_val): ws.column_dimensions[col_letter].width=30
-        else: ws.column_dimensions[col_letter].width=22
+        # Column widths
+        for col in ws.columns:
+            col_letter = col[0].column_letter
+            header_val = ws[f"{col_letter}1"].value
+            if header_val=="Summary": ws.column_dimensions[col_letter].width=25
+            elif header_val and "Verdict" in str(header_val): ws.column_dimensions[col_letter].width=18
+            elif header_val and "Ideal" in str(header_val): ws.column_dimensions[col_letter].width=30
+            else: ws.column_dimensions[col_letter].width=22
 
     out = BytesIO()
     wb.save(out)
