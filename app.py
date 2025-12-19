@@ -53,8 +53,19 @@ def extract_article(url):
         article_container = soup.find("div", {"class": re.compile(r"article-content|content|story|entry", re.I)}) \
                            or soup.find("article") \
                            or soup.find("div", {"id": re.compile(r"article|content|story", re.I)})
+
+        # fallback: pick div with maximum paragraphs
         if not article_container:
-            article_container = soup.body  # fallback to whole body if no article container
+            possible_containers = soup.find_all("div", recursive=True)
+            max_p_count = 0
+            for c in possible_containers:
+                p_count = len(c.find_all("p"))
+                if p_count > max_p_count:
+                    article_container = c
+                    max_p_count = p_count
+
+        if not article_container:
+            article_container = soup.body  # last resort
 
         title = soup.title.string.strip() if soup.title and soup.title.string else ""
         md = soup.find("meta", attrs={"name":"description"}) or soup.find("meta", attrs={"property":"og:description"})
@@ -67,18 +78,22 @@ def extract_article(url):
         h1 = [safe_get_text(t) for t in article_container.find_all("h1")]
         h2 = [safe_get_text(t) for t in article_container.find_all("h2")]
 
-        imgs = article_container.find_all("img")
+        # Filter images: ignore hidden or zero size
+        imgs = [im for im in article_container.find_all("img") 
+                if (im.get("style") or "").find("display:none")==-1 
+                and (im.get("width") or "0")!="0" 
+                and (im.get("height") or "0")!="0"]
         img_count = len(imgs)
         alt_with = sum(1 for im in imgs if (im.get("alt") or "").strip())
 
-        anchors = article_container.find_all("a")
+        # Filter links: ignore empty, mailto, or anchor links
+        anchors = [a for a in article_container.find_all("a") 
+                   if a.get("href") and not a.get("href").startswith(("#","mailto:"))]
         internal_links = 0
         external_links = 0
         domain = urlparse(url).netloc.lower()
         for a in anchors:
-            href = a.get("href") or ""
-            if href.startswith("#") or href.startswith("mailto:") or href.strip() == "":
-                continue
+            href = a.get("href")
             parsed = urlparse(href if href.startswith(("http://","https://")) else "https://" + domain + href)
             if parsed.netloc and parsed.netloc.lower() != domain:
                 external_links += 1
