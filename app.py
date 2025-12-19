@@ -172,7 +172,7 @@ def seo_analysis_struct(data):
     if 2<=external_links<=4: score+=4
     if 10<=avg_wps<=20: score+=8
     score = min(score,100)
-    # Grade calculation fix
+
     if score>=90: grade="A+"
     elif score>=80: grade="A"
     elif score>=65: grade="B"
@@ -229,42 +229,41 @@ def apply_excel_formatting(workbook_bytes):
             for cell in row:
                 cell.alignment = center_wrap
                 cell.border = thin_border
-        # red highlight only in Audit sheet
         # Red highlight only in Audit sheet
-if sheet_name=="Audit":
-    headers = [c.value for c in ws[1]]
-    for row in ws.iter_rows(min_row=2):
-        lookup={headers[i]:row[i] for i in range(len(headers))}
-        def val(h): 
-            c=lookup.get(h)
-            return c.value if c else None
-        def mark_red(h,cond): 
-            c=lookup.get(h)
-            if c and cond:
-                c.fill=red_fill
+        if sheet_name=="Audit":
+            headers = [c.value for c in ws[1]]
+            for row in ws.iter_rows(min_row=2):
+                lookup={headers[i]:row[i] for i in range(len(headers))}
+                def val(h): 
+                    c=lookup.get(h)
+                    return c.value if c else None
+                def mark_red(h,cond): 
+                    c=lookup.get(h)
+                    if c and cond:
+                        c.fill=red_fill
 
-        mark_red("Title Length Actual", not(50 <= (float(val("Title Length Actual") or 0) <= 60)))
-        mark_red("Meta Length Actual", not(150 <= (float(val("Meta Length Actual") or 0) <=160)))
-        mark_red("H1 Count Actual",(float(val("H1 Count Actual") or 0)!=1))
-        mark_red("H2 Count Actual",not(2 <= (float(val("H2 Count Actual") or 0) <=5)))
-        mark_red("Content Length Actual",(float(val("Content Length Actual") or 0)<600))
-        mark_red("Paragraph Count Actual",(float(val("Paragraph Count Actual") or 0)<8))
-        mark_red("Image Count Actual",(float(val("Image Count Actual") or 0)<3))
-        img_actual=float(val("Image Count Actual") or 0)
-        alt_actual=float(val("Alt Tags Actual") or 0)
-        mark_red("Alt Tags Actual",alt_actual<img_actual)
-        mark_red("Internal Links Actual",not(2 <= (float(val("Internal Links Actual") or 0) <=5)))
-        mark_red("External Links Actual",not(2 <= (float(val("External Links Actual") or 0) <=4)))
-        mark_red("Readability Actual",not(10 <= (float(val("Readability Actual") or 0) <=20)))
+                mark_red("Title Length Actual", not(50 <= (float(val("Title Length Actual") or 0) <= 60)))
+                mark_red("Meta Length Actual", not(150 <= (float(val("Meta Length Actual") or 0) <=160)))
+                mark_red("H1 Count Actual",(float(val("H1 Count Actual") or 0)!=1))
+                mark_red("H2 Count Actual",not(2 <= (float(val("H2 Count Actual") or 0) <=5)))
+                mark_red("Content Length Actual",(float(val("Content Length Actual") or 0)<600))
+                mark_red("Paragraph Count Actual",(float(val("Paragraph Count Actual") or 0)<8))
+                mark_red("Image Count Actual",(float(val("Image Count Actual") or 0)<3))
+                img_actual=float(val("Image Count Actual") or 0)
+                alt_actual=float(val("Alt Tags Actual") or 0)
+                mark_red("Alt Tags Actual",alt_actual<img_actual)
+                mark_red("Internal Links Actual",not(2 <= (float(val("Internal Links Actual") or 0) <=5)))
+                mark_red("External Links Actual",not(2 <= (float(val("External Links Actual") or 0) <=4)))
+                mark_red("Readability Actual",not(10 <= (float(val("Readability Actual") or 0) <=20)))
 
-        # Column widths
-        for col in ws.columns:
-            col_letter = col[0].column_letter
-            header_val = ws[f"{col_letter}1"].value
-            if header_val=="Summary": ws.column_dimensions[col_letter].width=25
-            elif header_val and "Verdict" in str(header_val): ws.column_dimensions[col_letter].width=18
-            elif header_val and "Ideal" in str(header_val): ws.column_dimensions[col_letter].width=30
-            else: ws.column_dimensions[col_letter].width=22
+            # Column widths
+            for col in ws.columns:
+                col_letter = col[0].column_letter
+                header_val = ws[f"{col_letter}1"].value
+                if header_val=="Summary": ws.column_dimensions[col_letter].width=25
+                elif header_val and "Verdict" in str(header_val): ws.column_dimensions[col_letter].width=18
+                elif header_val and "Ideal" in str(header_val): ws.column_dimensions[col_letter].width=30
+                else: ws.column_dimensions[col_letter].width=22
 
     out = BytesIO()
     wb.save(out)
@@ -341,4 +340,3 @@ if process:
             file_name="SEO_Audit_Report.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-
