@@ -40,7 +40,7 @@ REQ_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9"
 }
 
-# ---------------- ARTICLE EXTRACTOR (MAIN CONTENT ONLY) ----------------
+# ---------------- ARTICLE EXTRACTOR ----------------
 def extract_article(url):
     try:
         if not url.lower().startswith(("http://","https://")):
@@ -49,63 +49,77 @@ def extract_article(url):
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # ---------------- FOCUS ONLY ON MAIN ARTICLE ----------------
-        article_container = soup.find("div", {"class": re.compile(r"article-content|content|story|entry", re.I)}) \
-                           or soup.find("article") \
-                           or soup.find("div", {"id": re.compile(r"article|content|story", re.I)})
+        # ---------------- FILTER FOR ADS/RELATED ----------------
+        def is_ad_or_related(tag):
+            id_class = " ".join(filter(None, [tag.get("id",""), " ".join(tag.get("class",[]))])).lower()
+            return any(x in id_class for x in ["ad","promo","related","banner","subscribe"])
 
-        # fallback: pick div with maximum paragraphs
+        # ---------------- SELECT MAIN ARTICLE CONTAINER ----------------
+        article_container = None
+        for cls in ["article-content","content","story","entry"]:
+            article_container = soup.find("div", {"class": re.compile(cls, re.I)})
+            if article_container and not is_ad_or_related(article_container):
+                break
         if not article_container:
-            possible_containers = soup.find_all("div", recursive=True)
+            article_container = soup.find("article")
+        if not article_container:
+            article_container = soup.find("div", {"id": re.compile(r"article|content|story", re.I)})
+        if not article_container:
+            possible_containers = [c for c in soup.find_all("div") if not is_ad_or_related(c)]
             max_p_count = 0
             for c in possible_containers:
-                p_count = len(c.find_all("p"))
+                p_count = len([p for p in c.find_all("p") if not is_ad_or_related(p)])
                 if p_count > max_p_count:
                     article_container = c
                     max_p_count = p_count
-
         if not article_container:
-            article_container = soup.body  # last resort
+            article_container = soup.body
 
+        # ---------------- TITLE & META ----------------
         title = soup.title.string.strip() if soup.title and soup.title.string else ""
         md = soup.find("meta", attrs={"name":"description"}) or soup.find("meta", attrs={"property":"og:description"})
         meta_desc = md.get("content").strip() if md and md.get("content") else ""
 
-        paras = article_container.find_all("p")
+        # ---------------- PARAGRAPHS ----------------
+        paras = [p for p in article_container.find_all("p") if not is_ad_or_related(p)]
+        paragraph_count = len(paras)
         article_text = " ".join([safe_get_text(p) for p in paras])
         article_text = re.sub(r"\s+", " ", article_text)
 
-        h1 = [safe_get_text(t) for t in article_container.find_all("h1")]
-        h2 = [safe_get_text(t) for t in article_container.find_all("h2")]
+        # ---------------- HEADINGS ----------------
+        h1 = [safe_get_text(t) for t in article_container.find_all("h1") if not is_ad_or_related(t)]
+        h2 = [safe_get_text(t) for t in article_container.find_all("h2") if not is_ad_or_related(t)]
 
-        # Filter images: ignore hidden or zero size
-        imgs = [im for im in article_container.find_all("img") 
-                if (im.get("style") or "").find("display:none")==-1 
-                and (im.get("width") or "0")!="0" 
-                and (im.get("height") or "0")!="0"]
+        # ---------------- IMAGES ----------------
+        imgs = [im for im in article_container.find_all("img") if not is_ad_or_related(im)]
         img_count = len(imgs)
         alt_with = sum(1 for im in imgs if (im.get("alt") or "").strip())
 
-        # Filter links: ignore empty, mailto, or anchor links
-        anchors = [a for a in article_container.find_all("a") 
-                   if a.get("href") and not a.get("href").startswith(("#","mailto:"))]
+        # ---------------- LINKS ----------------
+        anchors = [a for a in article_container.find_all("a")
+                   if a.get("href") and not a.get("href").startswith(("#","mailto:"))
+                   and not is_ad_or_related(a)]
         internal_links = 0
         external_links = 0
         domain = urlparse(url).netloc.lower()
         for a in anchors:
             href = a.get("href")
-            parsed = urlparse(href if href.startswith(("http://","https://")) else "https://" + domain + href)
+            if not href.startswith(("http://","https://")):
+                href = "https://" + domain + href.lstrip("/")
+            parsed = urlparse(href)
             if parsed.netloc and parsed.netloc.lower() != domain:
                 external_links += 1
             else:
                 internal_links += 1
 
-        paragraph_count = len([p for p in paras if safe_get_text(p)])
+        # ---------------- WORD & SENTENCE COUNT ----------------
         sentences = re.split(r"[.!?]\s+", article_text)
         sentence_count = len([s for s in sentences if s.strip()])
         words = article_text.split()
         word_count = len(words)
         avg_words_per_sentence = round(word_count / max(1,sentence_count),2)
+
+        # ---------------- SUMMARY ----------------
         summary = ""
         if sentence_count >= 1:
             summary = ". ".join([s.strip() for s in sentences[:2]])
@@ -194,7 +208,6 @@ def seo_analysis_struct(data):
     if 2<=external_links<=4: score+=4
     if 10<=avg_wps<=20: score+=8
     score = min(score,100)
-    # Grade calculation fix
     if score>=90: grade="A+"
     elif score>=80: grade="A"
     elif score>=65: grade="B"
@@ -240,18 +253,15 @@ def apply_excel_formatting(workbook_bytes):
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
         ws.sheet_view.showGridLines = False
-        # headers
         for cell in ws[1]:
             cell.font = header_font
             cell.fill = header_fill
             cell.alignment = center_wrap
             cell.border = thin_border
-        # data rows
         for row in ws.iter_rows(min_row=2):
             for cell in row:
                 cell.alignment = center_wrap
                 cell.border = thin_border
-        # red highlight only in Audit sheet
         if sheet_name=="Audit":
             headers = [c.value for c in ws[1]]
             for row in ws.iter_rows(min_row=2):
@@ -278,7 +288,6 @@ def apply_excel_formatting(workbook_bytes):
                 mark_red("External Links Actual",not(2 <= (float(val("External Links Actual") or 0) <=4)))
                 mark_red("Readability Actual",not(10 <= (float(val("Readability Actual") or 0) <=20)))
 
-            # Column widths
             for col in ws.columns:
                 col_letter = col[0].column_letter
                 header_val = ws[f"{col_letter}1"].value
