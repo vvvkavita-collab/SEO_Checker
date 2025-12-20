@@ -36,51 +36,84 @@ HEADERS = {"User-Agent":"Mozilla/5.0"}
 def extract_article(url):
     if not url.startswith("http"):
         url = "https://" + url
+
     r = requests.get(url, headers=HEADERS, timeout=20)
-    soup = BeautifulSoup(r.text,"html.parser")
+    soup = BeautifulSoup(r.text, "html.parser")
 
+    # -------- TITLE & META --------
     title = soup.title.text.strip() if soup.title else ""
-    meta = ""
-    md = soup.find("meta",attrs={"name":"description"})
-    if md: meta = md.get("content","")
+    meta_desc = ""
+    md = soup.find("meta", attrs={"name": "description"})
+    if md:
+        meta_desc = md.get("content", "").strip()
 
-    # 🎯 NEWS BODY (IMPORTANT FIX)
-    content = (
-        soup.find("div",class_="storyDetail")
-        or soup.find("article")
-        or soup.find("div",class_="story-body")
-    )
+    # -------- MAIN HEADLINE (H1) --------
+    h1 = ""
+    h1_tag = soup.find("h1")
+    if h1_tag:
+        h1 = h1_tag.get_text(strip=True)
 
-    if not content:
-        content = soup
+    # -------- MAIN STORY CONTENT (CRITICAL FIX) --------
+    story_box = soup.find("div", class_="storyDetail")
+    story_content = None
 
-    paras = content.find_all("p")
-    imgs = content.find_all("img")
-    anchors = content.find_all("a")
+    if story_box:
+        story_content = story_box.find("div", class_="storyContent")
 
-    text = " ".join([safe_text(p) for p in paras])
-    words = text.split()
+    if not story_content:
+        return None  # agar article hi nahi mila
 
-    domain = urlparse(url).netloc.lower()
+    # -------- PARAGRAPHS --------
+    paragraphs = [
+        p.get_text(" ", strip=True)
+        for p in story_content.find_all("p")
+        if len(p.get_text(strip=True)) > 40
+    ]
+
+    # -------- IMAGES --------
+    images = story_content.find_all("img")
+
+    # -------- ALT TAG COUNT --------
+    alt_count = sum(1 for img in images if img.get("alt"))
+
+    # -------- HEADINGS H2 --------
+    h2s = [
+        h.get_text(strip=True)
+        for h in story_content.find_all("h2")
+    ]
+
+    # -------- LINKS (ONLY INSIDE STORY) --------
+    domain = urlparse(url).netloc
     internal = external = 0
-    for a in anchors:
-        href = a.get("href","")
-        if not href: continue
-        parsed = urlparse(href if href.startswith("http") else "https://"+domain+href)
-        if parsed.netloc and parsed.netloc.lower()!=domain:
-            external+=1
+
+    for a in story_content.find_all("a", href=True):
+        href = a["href"]
+        if href.startswith("http"):
+            if domain in href:
+                internal += 1
+            else:
+                external += 1
         else:
-            internal+=1
+            internal += 1
+
+    # -------- WORD COUNT --------
+    full_text = " ".join(paragraphs)
+    words = full_text.split()
 
     return {
-        "title": title,
-        "meta": meta,
-        "word_count": len(words),
-        "paragraph_count": len([p for p in paras if safe_text(p)]),
-        "img_count": len(imgs),
-        "alt_with": sum(1 for i in imgs if (i.get("alt") or "").strip()),
-        "internal_links": internal,
-        "external_links": external
+        "Title": title,
+        "Title Length": len(title),
+        "Meta Description": meta_desc,
+        "Meta Length": len(meta_desc),
+        "H1": h1,
+        "H1 Length": len(h1),
+        "H2 Count": len(h2s),
+        "Paragraph Count": len(paragraphs),
+        "Word Count": len(words),
+        "Image Count": len(images),
+        "Alt Tag Count": alt_count,
+        "Internal Links": internal,
+        "External Links": external
     }
 
 # ---------------- IDEAL RANGES ----------------
@@ -151,3 +184,4 @@ if st.button("Analyze"):
 
     st.download_button("📥 Download SEO Report", excel.getvalue(),
         file_name="SEO_Audit_Report.xlsx")
+
