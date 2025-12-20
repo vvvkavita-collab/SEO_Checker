@@ -45,6 +45,7 @@ def extract_article(url):
     try:
         if not url.lower().startswith(("http://","https://")):
             url = "https://" + url.lstrip("/")
+
         r = requests.get(url, headers=REQ_HEADERS, timeout=25)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
@@ -53,31 +54,23 @@ def extract_article(url):
         md = soup.find("meta", attrs={"name":"description"}) or soup.find("meta", attrs={"property":"og:description"})
         meta_desc = md.get("content").strip() if md and md.get("content") else ""
 
-        # ------------------ MAIN NEWS CONTENT ------------------
-        main_content = soup.find("div", class_="storyDetail")
-        if main_content:
-            paras = main_content.find_all("p")
-            imgs = main_content.find_all("img")
-            anchors = []
-            for p in paras:
-                anchors.extend(p.find_all("a"))
-        else:
-            paras = soup.find_all("p")
-            imgs = soup.find_all("img")
-            anchors = []
-            for p in paras:
-                anchors.extend(p.find_all("a"))
-        # -------------------------------------------------------
+        # --- MAIN NEWS CONTENT ONLY ---
+        news_container = soup.find("div", class_="storyDetail")
+        if not news_container:
+            news_container = soup  # fallback if container not found
 
+        paras = news_container.find_all("p")
         article = " ".join([safe_get_text(p) for p in paras])
         article = re.sub(r"\s+", " ", article)
 
-        h1 = [safe_get_text(t) for t in soup.find_all("h1")]
-        h2 = [safe_get_text(t) for t in soup.find_all("h2")]
+        h1 = [safe_get_text(t) for t in news_container.find_all("h1")]
+        h2 = [safe_get_text(t) for t in news_container.find_all("h2")]
 
+        imgs = news_container.find_all("img")
         img_count = len(imgs)
         alt_with = sum(1 for im in imgs if (im.get("alt") or "").strip())
 
+        anchors = news_container.find_all("a")
         internal_links = 0
         external_links = 0
         domain = urlparse(url).netloc.lower()
@@ -348,9 +341,8 @@ if process:
         formatted_bytes = apply_excel_formatting(excel_bytes.getvalue())
 
         st.download_button(
-    label="📥 Download Styled SEO Report",
-    data=formatted_bytes,
-    file_name="SEO_Audit_Report.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-)
-
+            label="📥 Download Styled SEO Report",
+            data=formatted_bytes,
+            file_name="SEO_Audit_Report.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
