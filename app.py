@@ -53,18 +53,27 @@ def extract_article(url):
         md = soup.find("meta", attrs={"name":"description"}) or soup.find("meta", attrs={"property":"og:description"})
         meta_desc = md.get("content").strip() if md and md.get("content") else ""
 
-        paras = soup.find_all("p")
+        # ------------------ TARGET MAIN ARTICLE ------------------
+        article_container = soup.find("article") or soup.find("div", class_=re.compile(r"(content|article|story|main)", re.I))
+        if article_container:
+            paras = article_container.find_all("p")
+            imgs = article_container.find_all("img")
+            anchors = article_container.find_all("a")
+        else:
+            paras = soup.find_all("p")
+            imgs = soup.find_all("img")
+            anchors = soup.find_all("a")
+        # ----------------------------------------------------------
+
         article = " ".join([safe_get_text(p) for p in paras])
         article = re.sub(r"\s+", " ", article)
 
         h1 = [safe_get_text(t) for t in soup.find_all("h1")]
         h2 = [safe_get_text(t) for t in soup.find_all("h2")]
 
-        imgs = soup.find_all("img")
         img_count = len(imgs)
         alt_with = sum(1 for im in imgs if (im.get("alt") or "").strip())
 
-        anchors = soup.find_all("a")
         internal_links = 0
         external_links = 0
         domain = urlparse(url).netloc.lower()
