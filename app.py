@@ -8,7 +8,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 
 # ---------------- CONFIG ----------------
-st.set_page_config(page_title="Advanced SEO Auditor", layout="wide")
+st.set_page_config(page_title="Advanced SEO Auditor – News & Blog", layout="wide")
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
@@ -20,42 +20,62 @@ st.title("🧠 Advanced SEO Auditor – News & Blog")
 st.sidebar.title("SEO Mode")
 SEO_MODE = st.sidebar.radio("Select Content Type", ["News Article", "Blog / Evergreen"])
 
-urls_input = st.text_area("Paste URLs (one per line)", height=150)
+urls_input = st.text_area("Paste URLs (one per line)", height=160)
 
-# ---------------- CORE EXTRACTION ----------------
+# ---------------- CONTENT EXTRACTOR ----------------
 def extract_article(url):
     try:
-        r = requests.get(url, headers=HEADERS, timeout=20)
+        r = requests.get(url, headers=HEADERS, timeout=25)
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # ----- TITLE & META -----
-        title = soup.title.text.strip() if soup.title else ""
-        meta = soup.find("meta", attrs={"name": "description"})
-        meta_desc = meta["content"].strip() if meta else ""
+        # ---------- TITLE ----------
+        title = soup.title.get_text(strip=True) if soup.title else ""
 
-        # ----- H1 -----
-        h1 = soup.find("h1").get_text(strip=True) if soup.find("h1") else ""
+        # ---------- META ----------
+        meta_tag = soup.find("meta", attrs={"name": "description"}) or \
+                   soup.find("meta", attrs={"property": "og:description"})
+        meta = meta_tag.get("content", "").strip() if meta_tag else ""
 
-        # ----- MAIN CONTENT (PATRiKA SAFE) -----
-        story_box = soup.find("div", class_="storyDetail")
-        story = story_box.find("div", class_="storyContent") if story_box else None
-        if not story:
+        # ---------- H1 ----------
+        h1_tag = soup.find("h1")
+        h1 = h1_tag.get_text(strip=True) if h1_tag else ""
+
+        # ---------- ARTICLE BODY (MULTI FALLBACK) ----------
+        article = (
+            soup.find("article") or
+            soup.find("div", itemprop="articleBody") or
+            soup.find("div", class_=lambda x: x and "story" in x.lower())
+        )
+
+        if not article:
             return None
 
+        # ---------- PARAGRAPHS ----------
         paragraphs = [
             p.get_text(" ", strip=True)
-            for p in story.find_all("p")
+            for p in article.find_all("p")
             if len(p.get_text(strip=True)) > 40
         ]
 
-        images = story.find_all("img")
-        alt_count = sum(1 for img in images if img.get("alt"))
+        if len(paragraphs) < 2:
+            return None
 
-        h2s = story.find_all("h2")
+        # ---------- WORD COUNT ----------
+        word_count = len(" ".join(paragraphs).split())
 
+        # ---------- IMAGES ----------
+        images = article.find_all("img")
+        img_count = len(images)
+        alt_count = sum(1 for i in images if i.get("alt"))
+
+        # ---------- H2 ----------
+        h2_count = len(article.find_all("h2"))
+
+        # ---------- LINKS ----------
         domain = urlparse(url).netloc
         internal = external = 0
-        for a in story.find_all("a", href=True):
+
+        for a in article.find_all("a", href=True):
             href = a["href"]
             if href.startswith("http"):
                 if domain in href:
@@ -65,44 +85,22 @@ def extract_article(url):
             else:
                 internal += 1
 
-        words = " ".join(paragraphs).split()
-
         return {
             "URL": url,
             "Title Length": len(title),
-            "Meta Length": len(meta_desc),
+            "Meta Length": len(meta),
             "H1 Length": len(h1),
-            "H2 Count": len(h2s),
-            "Word Count": len(words),
+            "H2 Count": h2_count,
+            "Word Count": word_count,
             "Paragraph Count": len(paragraphs),
-            "Image Count": len(images),
+            "Image Count": img_count,
             "Alt Tags": alt_count,
             "Internal Links": internal,
             "External Links": external
         }
 
-    except:
+    except Exception:
         return None
-
-# ---------------- SCORING ----------------
-def score_news(d):
-    if not d:
-        return 0
-
-    score = 0
-    score += 15 if d["Word Count"] >= 250 else 0
-    score += 10 if d["Paragraph Count"] >= 4 else 0
-    score += 10 if d["Image Count"] >= 1 else 0
-    score += 10 if d["H1 Length"] >= 20 else 0
-    score += 10 if d["Meta Length"] >= 70 else 0
-    return score
-
-def seo_grade(score):
-    if score >= 85: return "A+"
-    if score >= 70: return "A"
-    if score >= 55: return "B"
-    if score >= 40: return "C"
-    return "D"
 
 # ---------------- IDEAL RANGE ----------------
 IDEAL = {
@@ -112,25 +110,41 @@ IDEAL = {
     "Internal Links": "2–10",
     "External Links": "0–2",
     "Meta Length": "70–160",
-    "H1 Length": "20–70"
+    "H1 Length": "20–70",
+    "H2 Count": "1–6"
 }
 
 def verdict(actual, key):
-    if key == "Internal Links":
-        return "✅" if 2 <= actual <= 10 else "❌"
-    if key == "External Links":
-        return "✅" if actual <= 2 else "❌"
-    if key == "Meta Length":
-        return "✅" if 70 <= actual <= 160 else "❌"
-    if key == "H1 Length":
-        return "✅" if actual >= 20 else "❌"
-    if key == "Word Count":
-        return "✅" if actual >= 250 else "❌"
-    if key == "Paragraph Count":
-        return "✅" if actual >= 4 else "❌"
-    if key == "Image Count":
-        return "✅" if actual >= 1 else "❌"
-    return "❌"
+    rules = {
+        "Word Count": actual >= 250,
+        "Paragraph Count": actual >= 4,
+        "Image Count": actual >= 1,
+        "Internal Links": 2 <= actual <= 10,
+        "External Links": actual <= 2,
+        "Meta Length": 70 <= actual <= 160,
+        "H1 Length": actual >= 20,
+        "H2 Count": 1 <= actual <= 6
+    }
+    return "🟢 Good" if rules.get(key, False) else "🔴 Needs Fix"
+
+# ---------------- SCORING ----------------
+def score_news(d):
+    score = 0
+    score += 20 if d["Word Count"] >= 250 else 0
+    score += 10 if d["Paragraph Count"] >= 4 else 0
+    score += 10 if d["Image Count"] >= 1 else 0
+    score += 10 if d["H1 Length"] >= 20 else 0
+    score += 10 if 70 <= d["Meta Length"] <= 160 else 0
+    score += 10 if 2 <= d["Internal Links"] <= 10 else 0
+    score += 10 if d["External Links"] <= 2 else 0
+    return score
+
+def grade(score):
+    if score >= 85: return "A+"
+    if score >= 70: return "A"
+    if score >= 55: return "B"
+    if score >= 40: return "C"
+    return "D"
 
 # ---------------- ANALYZE ----------------
 if st.button("Analyze"):
@@ -142,12 +156,13 @@ if st.button("Analyze"):
             continue
 
         data = extract_article(url)
+
         if not data:
-            st.warning(f"Content not detected: {url}")
+            st.warning(f"⚠️ Content not detected: {url}")
             continue
 
-        score = score_news(data) if SEO_MODE == "News Article" else score_news(data)
-        grade = seo_grade(score)
+        score = score_news(data)
+        seo_grade = grade(score)
 
         for k in IDEAL:
             rows.append({
@@ -157,39 +172,51 @@ if st.button("Analyze"):
                 "Ideal": IDEAL[k],
                 "Verdict": verdict(data.get(k, 0), k),
                 "SEO Score": score,
-                "SEO Grade": grade
+                "SEO Grade": seo_grade
             })
 
-    df = pd.DataFrame(rows)
-    st.dataframe(df, use_container_width=True)
+    if not rows:
+        st.error("No valid articles detected.")
+    else:
+        df = pd.DataFrame(rows)
+        st.dataframe(df, use_container_width=True)
 
-    # ---------------- EXCEL DOWNLOAD ----------------
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="SEO Audit")
+        # -------- EXCEL --------
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="SEO_Audit")
 
-        edu = pd.DataFrame({
-            "Heading": ["H1", "H2", "Meta Description"],
-            "Why Important": [
-                "Primary topic for Google",
-                "Content structure & clarity",
-                "CTR & search snippet"
-            ],
-            "If Correct": [
-                "Better ranking relevance",
-                "Improved readability",
-                "Higher click-through"
-            ],
-            "If Wrong": [
-                "Ranking confusion",
-                "Poor UX",
-                "Low CTR"
-            ]
-        })
-        edu.to_excel(writer, index=False, sheet_name="SEO Education")
+            explain = pd.DataFrame({
+                "Heading": ["Title", "Meta Description", "H1", "H2", "Images", "Internal Links"],
+                "Why Important": [
+                    "Search relevance",
+                    "CTR in Google",
+                    "Main topic clarity",
+                    "Content structure",
+                    "User engagement",
+                    "SEO crawl strength"
+                ],
+                "If Correct": [
+                    "Higher ranking",
+                    "More clicks",
+                    "Clear topic",
+                    "Better readability",
+                    "Lower bounce",
+                    "Better indexing"
+                ],
+                "If Wrong": [
+                    "Ranking loss",
+                    "Low CTR",
+                    "Topic confusion",
+                    "Poor UX",
+                    "Low engagement",
+                    "Weak SEO"
+                ]
+            })
+            explain.to_excel(writer, index=False, sheet_name="SEO_Why_It_Matters")
 
-    st.download_button(
-        "📥 Download SEO Report",
-        output.getvalue(),
-        file_name="SEO_Audit_Report.xlsx"
-    )
+        st.download_button(
+            "📥 Download SEO Report",
+            output.getvalue(),
+            file_name="SEO_Audit_Report.xlsx"
+        )
