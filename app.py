@@ -40,65 +40,107 @@ REQ_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9"
 }
 
-# ---------------- ARTICLE EXTRACTOR ----------------
+# ---------------- ARTICLE EXTRACTOR (FIXED FOR NEWS BODY ONLY) ----------------
 def extract_article(url):
     try:
-        if not url.lower().startswith(("http://","https://")):
+        if not url.lower().startswith(("http://", "https://")):
             url = "https://" + url.lstrip("/")
+
         r = requests.get(url, headers=REQ_HEADERS, timeout=25)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
+        # ---- BASIC META ----
         title = soup.title.string.strip() if soup.title and soup.title.string else ""
-        md = soup.find("meta", attrs={"name":"description"}) or soup.find("meta", attrs={"property":"og:description"})
+        md = soup.find("meta", attrs={"name": "description"}) \
+             or soup.find("meta", attrs={"property": "og:description"})
         meta_desc = md.get("content").strip() if md and md.get("content") else ""
 
-        # ---------------- ARTICLE CONTENT CONTAINER ----------------
-        # Patrika: <div class="article-content"> ya <div class="article-body"> type
-        article_container = soup.find("div", class_=re.compile(r'article(-)?(content|body)', re.I))
-        if not article_container:
-            article_container = soup  # fallback to whole page
+        # ---- TRY TO FIND MAIN NEWS CONTAINER ----
+        news_container = soup.find("div", class_="storyDetail")
 
-        # Paragraphs
-        paras = article_container.find_all("p")
-        paragraph_count = len([p for p in paras if safe_get_text(p)])
-        article_text = " ".join([safe_get_text(p) for p in paras])
-        article_text = re.sub(r"\s+", " ", article_text)
+        if not news_container:
+            candidate_selectors = [
+                "article",
+                "div[itemprop='articleBody']",
+                "div[itemtype='http://schema.org/NewsArticle']",
+                "div[itemtype='http://schema.org/Article']",
+                "div[class*='article-body']",
+                "div[class*='story-content']",
+                "div[class*='storyDetail']",
+                "div[class*='post-content']",
+                "div[id*='article']",
+                "div[id*='story']"
+            ]
+            candidates = []
+            for sel in candidate_selectors:
+                for c in soup.select(sel):
+                    text_len = len(safe_get_text(c))
+                    if text_len > 200:
+                        candidates.append((text_len, c))
+            if candidates:
+                candidates.sort(key=lambda x: x[0], reverse=True)
+                news_container = candidates[0][1]
 
-        # Images
-        imgs = article_container.find_all("img")
+        if not news_container:
+            news_container = soup.body or soup
+
+        # ---- ONLY FROM MAIN ARTICLE CONTAINER ----
+        paras = news_container.find_all("p")
+        article = " ".join([safe_get_text(p) for p in paras])
+        article = re.sub(r"\s+", " ", article).strip()
+
+        h1 = [safe_get_text(t) for t in news_container.find_all("h1")]
+        h2 = [safe_get_text(t) for t in news_container.find_all("h2")]
+
+        # ---- IMAGES & ALT ----
+        imgs = news_container.find_all("img")
         img_count = len(imgs)
         alt_with = sum(1 for im in imgs if (im.get("alt") or "").strip())
 
-        # Headings
-        h1 = [safe_get_text(t) for t in article_container.find_all("h1")]
-        h2 = [safe_get_text(t) for t in article_container.find_all("h2")]
-
-        # Links
-        anchors = article_container.find_all("a")
+        # ---- LINKS (ONLY FROM NEWS BODY) ----
+        anchors = news_container.find_all("a")
         internal_links = 0
         external_links = 0
         domain = urlparse(url).netloc.lower()
+
         for a in anchors:
             href = a.get("href") or ""
-            if href.startswith("#") or href.startswith("mailto:") or href.strip() == "":
+            href = href.strip()
+            if not href:
                 continue
-            parsed = urlparse(href if href.startswith(("http://","https://")) else "https://" + domain + href)
-            if parsed.netloc and parsed.netloc.lower() != domain:
-                external_links += 1
+            if href.startswith("#") or href.startswith("mailto:") or href.startswith("tel:"):
+                continue
+
+            if href.startswith("//"):
+                href_full = "https:" + href
+            elif href.startswith(("http://", "https://")):
+                href_full = href
             else:
+                href_full = "https://" + domain + href if not href.startswith("/") else f"https://{domain}{href}"
+
+            parsed = urlparse(href_full)
+            if not parsed.netloc:
+                continue
+
+            if parsed.netloc.lower() == domain:
                 internal_links += 1
+            else:
+                external_links += 1
 
-        # Word & sentence count
-        sentences = re.split(r"[.!?]\s+", article_text)
-        sentence_count = len([s for s in sentences if s.strip()])
-        words = article_text.split()
+        # ---- COUNTS ----
+        paragraph_count = len([p for p in paras if safe_get_text(p)])
+        sentences = re.split(r"[.!?]\s+", article)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        sentence_count = len(sentences)
+        words = article.split()
         word_count = len(words)
-        avg_words_per_sentence = round(word_count / max(1,sentence_count),2)
+        avg_words_per_sentence = round(word_count / max(1, sentence_count), 2)
 
+        # ---- SUMMARY FROM NEWS BODY ----
         summary = ""
         if sentence_count >= 1:
-            summary = ". ".join([s.strip() for s in sentences[:2]])
+            summary = ". ".join(sentences[:2])
             if summary and not summary.endswith("."):
                 summary += "."
 
@@ -117,14 +159,14 @@ def extract_article(url):
             "summary": summary[:20]
         }
 
-    except:
+    except Exception:
         return {
-            "title":"", "meta":"", "h1":[], "h2":[],
-            "img_count":0, "alt_with":0,
-            "internal_links":0, "external_links":0,
-            "paragraph_count":0, "word_count":0,
-            "avg_words_per_sentence":0,
-            "summary":""
+            "title": "", "meta": "", "h1": [], "h2": [],
+            "img_count": 0, "alt_with": 0,
+            "internal_links": 0, "external_links": 0,
+            "paragraph_count": 0, "word_count": 0,
+            "avg_words_per_sentence": 0,
+            "summary": ""
         }
 
 # ---------------- VERDICT ----------------
@@ -134,13 +176,16 @@ def verdict(actual, ideal_min=None, ideal_max=None, ideal_exact=None):
     except:
         return "❌ Needs Fix"
     if ideal_exact is not None:
-        return "✅ Good" if val==ideal_exact else "❌ Needs Fix"
+        return "✅ Good" if val == ideal_exact else "❌ Needs Fix"
     if ideal_min is not None and ideal_max is not None:
-        if ideal_min <= val <= ideal_max: return "✅ Good"
-        elif val>ideal_max: return "⚠️ Excessive"
-        else: return "❌ Needs Fix"
+        if ideal_min <= val <= ideal_max:
+            return "✅ Good"
+        elif val > ideal_max:
+            return "⚠️ Excessive"
+        else:
+            return "❌ Needs Fix"
     if ideal_min is not None:
-        return "✅ Good" if val>=ideal_min else "❌ Needs Fix"
+        return "✅ Good" if val >= ideal_min else "❌ Needs Fix"
     return "❌ Needs Fix"
 
 # ---------------- SEO ANALYSIS ----------------
@@ -158,39 +203,44 @@ def seo_analysis_struct(data):
     avg_wps = data["avg_words_per_sentence"]
 
     metrics = [
-        ("Title Length Actual", len(title), "Title Length Ideal", "50–60 characters", "Title Verdict", verdict(len(title),50,60)),
-        ("Meta Length Actual", len(meta), "Meta Length Ideal", "150–160 characters", "Meta Verdict", verdict(len(meta),150,160)),
+        ("Title Length Actual", len(title), "Title Length Ideal", "50–60 characters", "Title Verdict", verdict(len(title), 50, 60)),
+        ("Meta Length Actual", len(meta), "Meta Length Ideal", "150–160 characters", "Meta Verdict", verdict(len(meta), 150, 160)),
         ("H1 Count Actual", h1_count, "H1 Count Ideal", "Exactly 1", "H1 Verdict", verdict(h1_count, ideal_exact=1)),
-        ("H2 Count Actual", h2_count, "H2 Count Ideal", "2–5", "H2 Verdict", verdict(h2_count,2,5)),
-        ("Content Length Actual", word_count, "Content Length Ideal", "600+ words", "Content Verdict", verdict(word_count,600,None)),
-        ("Paragraph Count Actual", paragraph_count, "Paragraph Count Ideal", "8+ paragraphs", "Paragraph Verdict", verdict(paragraph_count,8,None)),
-        ("Image Count Actual", img_count, "Image Count Ideal", "3+ images", "Image Verdict", verdict(img_count,3,None)),
-        ("Alt Tags Actual", alt_with, "Alt Tags Ideal", "All images must have alt text", "Alt Tags Verdict", verdict(alt_with,ideal_exact=img_count)),
-        ("Internal Links Actual", internal_links, "Internal Links Ideal", "2–5", "Internal Links Verdict", verdict(internal_links,2,5)),
-        ("External Links Actual", external_links, "External Links Ideal", "2–4", "External Links Verdict", verdict(external_links,2,4)),
-        ("Readability Actual", avg_wps, "Readability Ideal", "10–20 words/sentence", "Readability Verdict", verdict(avg_wps,10,20))
+        ("H2 Count Actual", h2_count, "H2 Count Ideal", "2–5", "H2 Verdict", verdict(h2_count, 2, 5)),
+        ("Content Length Actual", word_count, "Content Length Ideal", "600+ words", "Content Verdict", verdict(word_count, 600, None)),
+        ("Paragraph Count Actual", paragraph_count, "Paragraph Count Ideal", "8+ paragraphs", "Paragraph Verdict", verdict(paragraph_count, 8, None)),
+        ("Image Count Actual", img_count, "Image Count Ideal", "3+ images", "Image Verdict", verdict(img_count, 3, None)),
+        ("Alt Tags Actual", alt_with, "Alt Tags Ideal", "All images must have alt text", "Alt Tags Verdict", verdict(alt_with, ideal_exact=img_count)),
+        ("Internal Links Actual", internal_links, "Internal Links Ideal", "2–5", "Internal Links Verdict", verdict(internal_links, 2, 5)),
+        ("External Links Actual", external_links, "External Links Ideal", "2–4", "External Links Verdict", verdict(external_links, 2, 4)),
+        ("Readability Actual", avg_wps, "Readability Ideal", "10–20 words/sentence", "Readability Verdict", verdict(avg_wps, 10, 20))
     ]
 
     # Scoring
     score = 0
-    if 50<=len(title)<=60: score+=10
-    if 150<=len(meta)<=160: score+=10
-    if h1_count==1: score+=8
-    if 2<=h2_count<=5: score+=6
-    if word_count>=600: score+=12
-    if paragraph_count>=8: score+=6
-    if img_count>=3: score+=8
-    if img_count>0 and alt_with==img_count: score+=6
-    if 2<=internal_links<=5: score+=4
-    if 2<=external_links<=4: score+=4
-    if 10<=avg_wps<=20: score+=8
-    score = min(score,100)
+    if 50 <= len(title) <= 60: score += 10
+    if 150 <= len(meta) <= 160: score += 10
+    if h1_count == 1: score += 8
+    if 2 <= h2_count <= 5: score += 6
+    if word_count >= 600: score += 12
+    if paragraph_count >= 8: score += 6
+    if img_count >= 3: score += 8
+    if img_count > 0 and alt_with == img_count: score += 6
+    if 2 <= internal_links <= 5: score += 4
+    if 2 <= external_links <= 4: score += 4
+    if 10 <= avg_wps <= 20: score += 8
+    score = min(score, 100)
 
-    if score>=90: grade="A+"
-    elif score>=80: grade="A"
-    elif score>=65: grade="B"
-    elif score>=50: grade="C"
-    else: grade="D"
+    if score >= 90:
+        grade = "A+"
+    elif score >= 80:
+        grade = "A"
+    elif score >= 65:
+        grade = "B"
+    elif score >= 50:
+        grade = "C"
+    else:
+        grade = "D"
 
     extras = {"Summary": (data["summary"] or "")[:20]}
     return score, grade, metrics, extras
@@ -198,21 +248,21 @@ def seo_analysis_struct(data):
 # ---------------- COLUMN GUIDE ----------------
 def get_column_guide_df():
     data = [
-        ("Column Name","Meaning","Ideal","SEO Impact"),
-        ("SEO Score","Overall SEO performance score","80+","Higher score = better ranking"),
-        ("SEO Grade","Grade based on SEO Score","A/A+","Quick quality indicator"),
-        ("Title Length Actual","Number of characters in page title","50–60 characters","Too short/long reduces CTR"),
-        ("Meta Length Actual","Meta description length","150–160 characters","Improves click-through rate"),
-        ("H1 Count Actual","Total H1 headings","Exactly 1","Multiple H1s confuse search engines"),
-        ("H2 Count Actual","Number of H2 subheadings","2–5","Helps content structure & readability"),
-        ("Content Length Actual","Total words in main content","600+ words","Longer content ranks better"),
-        ("Paragraph Count Actual","Number of paragraphs","8+","Improves readability"),
-        ("Image Count Actual","Total images","3+ images","Images increase engagement"),
-        ("Alt Tags Actual","Images having ALT text","All images","ALT tags help SEO"),
-        ("Internal Links Actual","Links pointing inside website","2–5","Improves crawlability"),
-        ("External Links Actual","Links pointing outside","2–4","Adds trust & credibility"),
-        ("Readability Actual","Average words per sentence","10–20 words","Easier to read"),
-        ("Summary","Short content preview","Clear & meaningful","Helps editors quickly")
+        ("Column Name", "Meaning", "Ideal", "SEO Impact"),
+        ("SEO Score", "Overall SEO performance score", "80+", "Higher score = better ranking"),
+        ("SEO Grade", "Grade based on SEO Score", "A/A+", "Quick quality indicator"),
+        ("Title Length Actual", "Number of characters in page title", "50–60 characters", "Too short/long reduces CTR"),
+        ("Meta Length Actual", "Meta description length", "150–160 characters", "Improves click-through rate"),
+        ("H1 Count Actual", "Total H1 headings", "Exactly 1", "Multiple H1s confuse search engines"),
+        ("H2 Count Actual", "Number of H2 subheadings", "2–5", "Helps content structure & readability"),
+        ("Content Length Actual", "Total words in main content", "600+ words", "Longer content ranks better"),
+        ("Paragraph Count Actual", "Number of paragraphs", "8+", "Improves readability"),
+        ("Image Count Actual", "Total images", "3+ images", "Images increase engagement"),
+        ("Alt Tags Actual", "Images having ALT text", "All images", "ALT tags help SEO"),
+        ("Internal Links Actual", "Links pointing inside website", "2–5", "Improves crawlability"),
+        ("External Links Actual", "Links pointing outside", "2–4", "Adds trust & credibility"),
+        ("Readability Actual", "Average words per sentence", "10–20 words", "Easier to read"),
+        ("Summary", "Short content preview", "Clear & meaningful", "Helps editors quickly")
     ]
     return pd.DataFrame(data[1:], columns=data[0])
 
@@ -243,40 +293,44 @@ def apply_excel_formatting(workbook_bytes):
                 cell.alignment = center_wrap
                 cell.border = thin_border
         # Red highlight only in Audit sheet
-        if sheet_name=="Audit":
+        if sheet_name == "Audit":
             headers = [c.value for c in ws[1]]
             for row in ws.iter_rows(min_row=2):
-                lookup={headers[i]:row[i] for i in range(len(headers))}
-                def val(h): 
-                    c=lookup.get(h)
+                lookup = {headers[i]: row[i] for i in range(len(headers))}
+                def val(h):
+                    c = lookup.get(h)
                     return c.value if c else None
-                def mark_red(h,cond): 
-                    c=lookup.get(h)
+                def mark_red(h, cond):
+                    c = lookup.get(h)
                     if c and cond:
-                        c.fill=red_fill
+                        c.fill = red_fill
 
-                mark_red("Title Length Actual", not(50 <= (float(val("Title Length Actual") or 0) <= 60)))
-                mark_red("Meta Length Actual", not(150 <= (float(val("Meta Length Actual") or 0) <=160)))
-                mark_red("H1 Count Actual",(float(val("H1 Count Actual") or 0)!=1))
-                mark_red("H2 Count Actual",not(2 <= (float(val("H2 Count Actual") or 0) <=5)))
-                mark_red("Content Length Actual",(float(val("Content Length Actual") or 0)<600))
-                mark_red("Paragraph Count Actual",(float(val("Paragraph Count Actual") or 0)<8))
-                mark_red("Image Count Actual",(float(val("Image Count Actual") or 0)<3))
-                img_actual=float(val("Image Count Actual") or 0)
-                alt_actual=float(val("Alt Tags Actual") or 0)
-                mark_red("Alt Tags Actual",alt_actual<img_actual)
-                mark_red("Internal Links Actual",not(2 <= (float(val("Internal Links Actual") or 0) <=5)))
-                mark_red("External Links Actual",not(2 <= (float(val("External Links Actual") or 0) <=4)))
-                mark_red("Readability Actual",not(10 <= (float(val("Readability Actual") or 0) <=20)))
+                mark_red("Title Length Actual", not (50 <= (float(val("Title Length Actual") or 0) <= 60)))
+                mark_red("Meta Length Actual", not (150 <= (float(val("Meta Length Actual") or 0) <= 160)))
+                mark_red("H1 Count Actual", (float(val("H1 Count Actual") or 0) != 1))
+                mark_red("H2 Count Actual", not (2 <= (float(val("H2 Count Actual") or 0) <= 5)))
+                mark_red("Content Length Actual", (float(val("Content Length Actual") or 0) < 600))
+                mark_red("Paragraph Count Actual", (float(val("Paragraph Count Actual") or 0) < 8))
+                mark_red("Image Count Actual", (float(val("Image Count Actual") or 0) < 3))
+                img_actual = float(val("Image Count Actual") or 0)
+                alt_actual = float(val("Alt Tags Actual") or 0)
+                mark_red("Alt Tags Actual", alt_actual < img_actual)
+                mark_red("Internal Links Actual", not (2 <= (float(val("Internal Links Actual") or 0) <= 5)))
+                mark_red("External Links Actual", not (2 <= (float(val("External Links Actual") or 0) <= 4)))
+                mark_red("Readability Actual", not (10 <= (float(val("Readability Actual") or 0) <= 20)))
 
             # Column widths
             for col in ws.columns:
                 col_letter = col[0].column_letter
                 header_val = ws[f"{col_letter}1"].value
-                if header_val=="Summary": ws.column_dimensions[col_letter].width=25
-                elif header_val and "Verdict" in str(header_val): ws.column_dimensions[col_letter].width=18
-                elif header_val and "Ideal" in str(header_val): ws.column_dimensions[col_letter].width=30
-                else: ws.column_dimensions[col_letter].width=22
+                if header_val == "Summary":
+                    ws.column_dimensions[col_letter].width = 25
+                elif header_val and "Verdict" in str(header_val):
+                    ws.column_dimensions[col_letter].width = 18
+                elif header_val and "Ideal" in str(header_val):
+                    ws.column_dimensions[col_letter].width = 30
+                else:
+                    ws.column_dimensions[col_letter].width = 22
 
     out = BytesIO()
     wb.save(out)
@@ -286,70 +340,73 @@ def apply_excel_formatting(workbook_bytes):
 st.title("🚀 Advanced SEO Auditor – Premium Edition")
 st.subheader("URL Analysis → Excel Report → Actual vs Ideal + Human Verdicts")
 
-if "merged_urls" not in st.session_state: st.session_state.merged_urls=""
+if "merged_urls" not in st.session_state:
+    st.session_state.merged_urls = ""
 
-uploaded = st.file_uploader("Upload URL List (TXT/CSV/XLSX)", type=["txt","csv","xlsx"])
+uploaded = st.file_uploader("Upload URL List (TXT/CSV/XLSX)", type=["txt", "csv", "xlsx"])
 urls_input = st.text_area("Paste URLs here", value=st.session_state.merged_urls, height=220)
 
 if uploaded is not None:
     try:
-        if uploaded.type=="text/plain":
+        if uploaded.type == "text/plain":
             content = uploaded.read().decode("utf-8", errors="ignore")
             uploaded_urls = "\n".join([l.strip() for l in content.splitlines() if l.strip()])
-        elif uploaded.type=="text/csv":
+        elif uploaded.type == "text/csv":
             df_u = pd.read_csv(uploaded, header=None)
-            uploaded_urls = "\n".join(df_u.iloc[:,0].astype(str).str.strip())
+            uploaded_urls = "\n".join(df_u.iloc[:, 0].astype(str).str.strip())
         else:
             df_u = pd.read_excel(uploaded, header=None)
-            uploaded_urls = "\n".join(df_u.iloc[:,0].astype(str).str.strip())
+            uploaded_urls = "\n".join(df_u.iloc[:, 0].astype(str).str.strip())
         existing = urls_input.strip()
-        st.session_state.merged_urls = (existing+"\n"+uploaded_urls).strip() if existing else uploaded_urls
+        st.session_state.merged_urls = (existing + "\n" + uploaded_urls).strip() if existing else uploaded_urls
         urls_input = st.session_state.merged_urls
-    except Exception as e: st.error(f"Failed to read uploaded file: {e}")
+    except Exception as e:
+        st.error(f"Failed to read uploaded file: {e}")
 
 process = st.button("Process & Create Report")
 
 if process:
-    if not urls_input.strip(): st.error("Please paste some URLs or upload a file.")
+    if not urls_input.strip():
+        st.error("Please paste some URLs or upload a file.")
     else:
-        seen=set()
-        urls=[]
+        seen = set()
+        urls = []
         for u in urls_input.splitlines():
-            u=u.strip()
+            u = u.strip()
             if u and u not in seen:
                 seen.add(u)
                 urls.append(u)
 
-        rows=[]
+        rows = []
         progress = st.progress(0)
         status = st.empty()
 
-        for i,url in enumerate(urls,start=1):
+        for i, url in enumerate(urls, start=1):
             status.text(f"Processing {i}/{len(urls)} : {url}")
             data = extract_article(url)
             score, grade, metrics, extras = seo_analysis_struct(data)
 
-            row = {"URL":url,"Summary":extras["Summary"],"SEO Score":score,"SEO Grade":grade}
+            row = {"URL": url, "Summary": extras["Summary"], "SEO Score": score, "SEO Grade": grade}
             for actual_h, actual_v, ideal_h, ideal_v, verdict_h, verdict_v in metrics:
-                row[actual_h]=actual_v
-                row[ideal_h]=ideal_v
-                row[verdict_h]=verdict_v
+                row[actual_h] = actual_v
+                row[ideal_h] = ideal_v
+                row[verdict_h] = verdict_v
             rows.append(row)
-            progress.progress(int((i/len(urls))*100))
+            progress.progress(int((i / len(urls)) * 100))
 
-        df=pd.DataFrame(rows)
+        df = pd.DataFrame(rows)
         st.success("✅ SEO Report generated successfully!")
         st.dataframe(df, use_container_width=True)
 
         excel_bytes = BytesIO()
         with pd.ExcelWriter(excel_bytes, engine="openpyxl") as writer:
-            df.to_excel(writer,index=False,sheet_name="Audit")
-            get_column_guide_df().to_excel(writer,index=False,sheet_name="Column_Guide")
+            df.to_excel(writer, index=False, sheet_name="Audit")
+            get_column_guide_df().to_excel(writer, index=False, sheet_name="Column_Guide")
         formatted_bytes = apply_excel_formatting(excel_bytes.getvalue())
 
         st.download_button(
             label="📥 Download Styled SEO Report",
             data=formatted_bytes,
             file_name="SEO_Audit_Report.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
