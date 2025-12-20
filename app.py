@@ -129,13 +129,15 @@ IDEAL = {
 
 # ---------------- SCORE ----------------
 def score_news(d):
-    score=0
-    score+=15 if d["word_count"]>=250 else 0
-    score+=10 if d["paragraph_count"]>=4 else 0
-    score+=10 if d["img_count"]>=1 else 0
-    score+=10 if 2<=d["internal_links"]<=10 else 0
-    score+=10 if 1<=d["external_links"]<=5 else 0
-    return min(score+20,100)  # freshness bonus
+    score = 0
+
+    score += 15 if d["Word Count"] >= 250 else 0
+    score += 10 if d["Paragraph Count"] >= 4 else 0
+    score += 10 if d["Image Count"] >= 1 else 0
+    score += 10 if d["H1 Length"] >= 20 else 0
+    score += 10 if d["Meta Length"] >= 70 else 0
+
+    return score
 
 # ---------------- UI ----------------
 st.title("🚀 Advanced SEO Auditor – Premium Edition")
@@ -184,4 +186,5 @@ if st.button("Analyze"):
 
     st.download_button("📥 Download SEO Report", excel.getvalue(),
         file_name="SEO_Audit_Report.xlsx")
+
 
