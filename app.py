@@ -53,31 +53,18 @@ def extract_article(url):
         md = soup.find("meta", attrs={"name":"description"}) or soup.find("meta", attrs={"property":"og:description"})
         meta_desc = md.get("content").strip() if md and md.get("content") else ""
 
-        # ------------------ MAIN NEWS CONTENT ------------------
-        main_content = soup.find("div", class_="storyDetail")  # adjust class as per site
-        if not main_content:
-            return {
-                "title": title, "meta": meta_desc, "h1": [], "h2": [],
-                "img_count": 0, "alt_with": 0, "internal_links": 0, "external_links": 0,
-                "paragraph_count": 0, "word_count": 0, "avg_words_per_sentence": 0, "summary": ""
-            }
-
-        paras = main_content.find_all("p", recursive=True)
-        imgs = main_content.find_all("img", recursive=True)
-        anchors = []
-        for p in paras:
-            anchors.extend(p.find_all("a", recursive=True))
-        # -------------------------------------------------------
-
+        paras = soup.find_all("p")
         article = " ".join([safe_get_text(p) for p in paras])
         article = re.sub(r"\s+", " ", article)
 
-        h1 = [safe_get_text(t) for t in main_content.find_all("h1", recursive=True)]
-        h2 = [safe_get_text(t) for t in main_content.find_all("h2", recursive=True)]
+        h1 = [safe_get_text(t) for t in soup.find_all("h1")]
+        h2 = [safe_get_text(t) for t in soup.find_all("h2")]
 
+        imgs = soup.find_all("img")
         img_count = len(imgs)
         alt_with = sum(1 for im in imgs if (im.get("alt") or "").strip())
 
+        anchors = soup.find_all("a")
         internal_links = 0
         external_links = 0
         domain = urlparse(url).netloc.lower()
@@ -97,7 +84,6 @@ def extract_article(url):
         words = article.split()
         word_count = len(words)
         avg_words_per_sentence = round(word_count / max(1,sentence_count),2)
-
         summary = ""
         if sentence_count >= 1:
             summary = ". ".join([s.strip() for s in sentences[:2]])
@@ -118,12 +104,13 @@ def extract_article(url):
             "avg_words_per_sentence": avg_words_per_sentence,
             "summary": summary[:20]
         }
-    except Exception as e:
-        print(f"Error extracting article: {e}")
+    except:
         return {
             "title":"", "meta":"", "h1":[], "h2":[],
-            "img_count":0, "alt_with":0, "internal_links":0, "external_links":0,
-            "paragraph_count":0, "word_count":0, "avg_words_per_sentence":0,
+            "img_count":0, "alt_with":0,
+            "internal_links":0, "external_links":0,
+            "paragraph_count":0, "word_count":0,
+            "avg_words_per_sentence":0,
             "summary":""
         }
 
