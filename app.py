@@ -349,29 +349,49 @@ st.title("🚀 Advanced SEO Auditor – Premium Edition")
 st.subheader("URL Analysis → Excel Report → Actual vs Ideal + Human Verdicts")
 
 if "merged_urls" not in st.session_state:
-    st.session_state.merged_urls = ""
+    st.session_state.merged_urls = []
 
-uploaded = st.file_uploader("Upload a text file of URLs (one URL per line)", type=["txt"])
-if uploaded:
-    urls = [line.strip() for line in uploaded.getvalue().decode("utf-8").splitlines() if line.strip()]
-    if urls:
-        st.session_state.merged_urls = urls
+# --- Dual input: Upload OR Paste ---
+uploaded = st.file_uploader("Upload URL List (TXT/CSV/XLSX)", type=["txt","csv","xlsx"])
+urls_input = st.text_area("Or paste URLs here (one per line)", height=200)
+
+# Process uploaded file
+uploaded_urls = []
+if uploaded is not None:
+    try:
+        if uploaded.type == "text/plain":
+            content = uploaded.read().decode("utf-8", errors="ignore")
+            uploaded_urls = [l.strip() for l in content.splitlines() if l.strip()]
+        elif uploaded.type == "text/csv":
+            df_u = pd.read_csv(uploaded, header=None)
+            uploaded_urls = df_u.iloc[:,0].astype(str).str.strip().tolist()
+        else:  # Excel
+            df_u = pd.read_excel(uploaded, header=None)
+            uploaded_urls = df_u.iloc[:,0].astype(str).str.strip().tolist()
+    except Exception as e:
+        st.error(f"Failed to read uploaded file: {e}")
+
+# Process pasted URLs
+pasted_urls = [l.strip() for l in urls_input.splitlines() if l.strip()]
+
+# Merge both sources, remove duplicates
+merged_urls = list(dict.fromkeys(uploaded_urls + pasted_urls))
+st.session_state.merged_urls = merged_urls
+
+st.write(f"Total URLs detected: {len(st.session_state.merged_urls)}")
+
+# --- Process Button ---
+if st.button("Process & Create Report"):
+    if not st.session_state.merged_urls:
+        st.error("Please upload a file or paste some URLs.")
     else:
-        st.warning("Uploaded file has no valid URLs.")
-
-if st.session_state.merged_urls:
-    if st.button("Start SEO Audit"):
         results = []
         progress_text = st.empty()
         for i, url in enumerate(st.session_state.merged_urls, 1):
             progress_text.text(f"Processing {i}/{len(st.session_state.merged_urls)}: {url}")
             data = extract_article(url)
             score, grade, metrics, extras = seo_analysis_struct(data)
-            row = {
-                "URL": url,
-                "SEO Score": score,
-                "SEO Grade": grade
-            }
+            row = {"URL": url, "SEO Score": score, "SEO Grade": grade}
             for metric in metrics:
                 row[metric[0]] = metric[1]
                 row[metric[4]] = metric[5]
@@ -391,4 +411,10 @@ if st.session_state.merged_urls:
         excel_bytes = apply_excel_formatting(out_buffer.getvalue())
 
         st.success("✅ SEO Audit Completed!")
-        st.download_button("Download Excel Report", data=excel_bytes, file_name="SEO_Audit_Report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button(
+            "Download Excel Report",
+            data=excel_bytes,
+            file_name="SEO_Audit_Report.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
