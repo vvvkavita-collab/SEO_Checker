@@ -348,7 +348,9 @@ if process:
         formatted_bytes = apply_excel_formatting(excel_bytes.getvalue())
 
         st.download_button(
-            label="📥 Download Styled SEO Report",
-            data=formatted_bytes,
-            file_name="SEO_Audit_Report.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.sp
+    label="📥 Download Styled SEO Report",
+    data=formatted_bytes,
+    file_name="SEO_Audit_Report.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+)
+
