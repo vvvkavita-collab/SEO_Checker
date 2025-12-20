@@ -3,7 +3,7 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 from io import BytesIO
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
@@ -26,13 +26,6 @@ h1, h2, h3, h4, h5, h6, p, label { color: white !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- SAFE GET TEXT ----------------
-def safe_get_text(tag):
-    try:
-        return tag.get_text(" ", strip=True)
-    except:
-        return ""
-
 # ---------------- REQUEST HEADERS ----------------
 REQ_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -40,8 +33,62 @@ REQ_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9"
 }
 
-# ---------------- ARTICLE EXTRACTOR (FIXED FOR NEWS BODY ONLY) ----------------
+# ---------------- SAFE TEXT ----------------
+def safe_text(tag):
+    try:
+        return tag.get_text(" ", strip=True)
+    except:
+        return ""
+
+# ---------------- ARTICLE EXTRACTOR (ADVANCED) ----------------
 def extract_article(url):
+    EXCLUDED_HINTS = (
+        "nav", "menu", "breadcrumb", "footer", "header", "aside",
+        "sidebar", "widget", "comment", "share", "related", "subscribe",
+        "ad", "advert", "sponsored", "promo", "popup", "modal"
+    )
+    SOCIAL_HOST_HINTS = (
+        "facebook.com", "fb.com", "twitter.com", "linkedin.com",
+        "t.me", "telegram.me", "youtube.com", "youtu.be",
+        "wa.me", "whatsapp.com", "plus.google.com"
+    )
+
+    def has_hint(s, hints):
+        s = (s or "").lower()
+        return any(h in s for h in hints)
+
+    def is_excluded(tag):
+        for anc in [tag] + list(tag.parents):
+            if getattr(anc, "name", "").lower() in ("nav", "footer", "header", "aside"):
+                return True
+            if has_hint(" ".join(anc.get("class") or []), EXCLUDED_HINTS):
+                return True
+            if has_hint(anc.get("id"), EXCLUDED_HINTS):
+                return True
+        return False
+
+    def get_main_container(soup):
+        sel_list = [
+            "article", "main", "div#content", "div#main", "div#main-content", "div#content-area",
+            "div.article", "div.story", "div.detail", "div.entry",
+            "section.article", "section.content", "section#content", "section#main"
+        ]
+        for sel in sel_list:
+            el = soup.select_one(sel)
+            if el: return el
+        # fallback: div/section containing most non-excluded paragraphs
+        candidates = soup.find_all(["div", "section"])
+        best = None
+        best_p = 0
+        for c in candidates:
+            if is_excluded(c):
+                continue
+            pcount = len([p for p in c.find_all("p") if safe_text(p)])
+            if pcount > best_p:
+                best_p = pcount
+                best = c
+        return best or soup
+
     try:
         if not url.lower().startswith(("http://", "https://")):
             url = "https://" + url.lstrip("/")
@@ -50,99 +97,65 @@ def extract_article(url):
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # ---- BASIC META ----
+        # Meta
         title = soup.title.string.strip() if soup.title and soup.title.string else ""
-        md = soup.find("meta", attrs={"name": "description"}) \
-             or soup.find("meta", attrs={"property": "og:description"})
+        md = soup.find("meta", attrs={"name":"description"}) or soup.find("meta", attrs={"property":"og:description"})
         meta_desc = md.get("content").strip() if md and md.get("content") else ""
 
-        # ---- TRY TO FIND MAIN NEWS CONTAINER ----
-        news_container = soup.find("div", class_="storyDetail")
+        main = get_main_container(soup)
 
-        if not news_container:
-            candidate_selectors = [
-                "article",
-                "div[itemprop='articleBody']",
-                "div[itemtype='http://schema.org/NewsArticle']",
-                "div[itemtype='http://schema.org/Article']",
-                "div[class*='article-body']",
-                "div[class*='story-content']",
-                "div[class*='storyDetail']",
-                "div[class*='post-content']",
-                "div[id*='article']",
-                "div[id*='story']"
-            ]
-            candidates = []
-            for sel in candidate_selectors:
-                for c in soup.select(sel):
-                    text_len = len(safe_get_text(c))
-                    if text_len > 200:
-                        candidates.append((text_len, c))
-            if candidates:
-                candidates.sort(key=lambda x: x[0], reverse=True)
-                news_container = candidates[0][1]
+        # Paragraphs
+        paras = [p for p in main.find_all("p") if not is_excluded(p)]
+        article_text = " ".join([safe_text(p) for p in paras])
+        article_text = re.sub(r"\s+", " ", article_text).strip()
 
-        if not news_container:
-            news_container = soup.body or soup
+        # Headings
+        h1 = [safe_text(t) for t in main.find_all("h1") if not is_excluded(t)]
+        h2 = [safe_text(t) for t in main.find_all("h2") if not is_excluded(t)]
 
-        # ---- ONLY FROM MAIN ARTICLE CONTAINER ----
-        paras = news_container.find_all("p")
-        article = " ".join([safe_get_text(p) for p in paras])
-        article = re.sub(r"\s+", " ", article).strip()
-
-        h1 = [safe_get_text(t) for t in news_container.find_all("h1")]
-        h2 = [safe_get_text(t) for t in news_container.find_all("h2")]
-
-        # ---- IMAGES & ALT ----
-        imgs = news_container.find_all("img")
+        # Images
+        imgs = [im for im in main.find_all("img") if not is_excluded(im)]
         img_count = len(imgs)
         alt_with = sum(1 for im in imgs if (im.get("alt") or "").strip())
 
-        # ---- LINKS (ONLY FROM NEWS BODY) ----
-        anchors = news_container.find_all("a")
+        # Links
+        anchors = [a for a in main.find_all("a") if not is_excluded(a)]
         internal_links = 0
         external_links = 0
         domain = urlparse(url).netloc.lower()
-
         for a in anchors:
             href = a.get("href") or ""
             href = href.strip()
-            if not href:
+            if not href or href.startswith(("#", "mailto:", "tel:")):
                 continue
-            if href.startswith("#") or href.startswith("mailto:") or href.startswith("tel:"):
-                continue
-
             if href.startswith("//"):
                 href_full = "https:" + href
             elif href.startswith(("http://", "https://")):
                 href_full = href
             else:
-                href_full = "https://" + domain + href if not href.startswith("/") else f"https://{domain}{href}"
-
+                href_full = urljoin(url, href)
             parsed = urlparse(href_full)
             if not parsed.netloc:
                 continue
-
+            if any(s in parsed.netloc.lower() for s in SOCIAL_HOST_HINTS):
+                continue
             if parsed.netloc.lower() == domain:
                 internal_links += 1
             else:
                 external_links += 1
 
-        # ---- COUNTS ----
-        paragraph_count = len([p for p in paras if safe_get_text(p)])
-        sentences = re.split(r"[.!?]\s+", article)
+        # Counts
+        paragraph_count = len(paras)
+        sentences = re.split(r"[.!?]\s+", article_text)
         sentences = [s.strip() for s in sentences if s.strip()]
         sentence_count = len(sentences)
-        words = article.split()
+        words = article_text.split()
         word_count = len(words)
         avg_words_per_sentence = round(word_count / max(1, sentence_count), 2)
 
-        # ---- SUMMARY FROM NEWS BODY ----
-        summary = ""
-        if sentence_count >= 1:
-            summary = ". ".join(sentences[:2])
-            if summary and not summary.endswith("."):
-                summary += "."
+        summary = ". ".join(sentences[:2])
+        if summary and not summary.endswith("."):
+            summary += "."
 
         return {
             "title": title,
@@ -231,16 +244,11 @@ def seo_analysis_struct(data):
     if 10 <= avg_wps <= 20: score += 8
     score = min(score, 100)
 
-    if score >= 90:
-        grade = "A+"
-    elif score >= 80:
-        grade = "A"
-    elif score >= 65:
-        grade = "B"
-    elif score >= 50:
-        grade = "C"
-    else:
-        grade = "D"
+    if score >= 90: grade = "A+"
+    elif score >= 80: grade = "A"
+    elif score >= 65: grade = "B"
+    elif score >= 50: grade = "C"
+    else: grade = "D"
 
     extras = {"Summary": (data["summary"] or "")[:20]}
     return score, grade, metrics, extras
@@ -343,70 +351,44 @@ st.subheader("URL Analysis → Excel Report → Actual vs Ideal + Human Verdicts
 if "merged_urls" not in st.session_state:
     st.session_state.merged_urls = ""
 
-uploaded = st.file_uploader("Upload URL List (TXT/CSV/XLSX)", type=["txt", "csv", "xlsx"])
-urls_input = st.text_area("Paste URLs here", value=st.session_state.merged_urls, height=220)
-
-if uploaded is not None:
-    try:
-        if uploaded.type == "text/plain":
-            content = uploaded.read().decode("utf-8", errors="ignore")
-            uploaded_urls = "\n".join([l.strip() for l in content.splitlines() if l.strip()])
-        elif uploaded.type == "text/csv":
-            df_u = pd.read_csv(uploaded, header=None)
-            uploaded_urls = "\n".join(df_u.iloc[:, 0].astype(str).str.strip())
-        else:
-            df_u = pd.read_excel(uploaded, header=None)
-            uploaded_urls = "\n".join(df_u.iloc[:, 0].astype(str).str.strip())
-        existing = urls_input.strip()
-        st.session_state.merged_urls = (existing + "\n" + uploaded_urls).strip() if existing else uploaded_urls
-        urls_input = st.session_state.merged_urls
-    except Exception as e:
-        st.error(f"Failed to read uploaded file: {e}")
-
-process = st.button("Process & Create Report")
-
-if process:
-    if not urls_input.strip():
-        st.error("Please paste some URLs or upload a file.")
+uploaded = st.file_uploader("Upload a text file of URLs (one URL per line)", type=["txt"])
+if uploaded:
+    urls = [line.strip() for line in uploaded.getvalue().decode("utf-8").splitlines() if line.strip()]
+    if urls:
+        st.session_state.merged_urls = urls
     else:
-        seen = set()
-        urls = []
-        for u in urls_input.splitlines():
-            u = u.strip()
-            if u and u not in seen:
-                seen.add(u)
-                urls.append(u)
+        st.warning("Uploaded file has no valid URLs.")
 
-        rows = []
-        progress = st.progress(0)
-        status = st.empty()
-
-        for i, url in enumerate(urls, start=1):
-            status.text(f"Processing {i}/{len(urls)} : {url}")
+if st.session_state.merged_urls:
+    if st.button("Start SEO Audit"):
+        results = []
+        progress_text = st.empty()
+        for i, url in enumerate(st.session_state.merged_urls, 1):
+            progress_text.text(f"Processing {i}/{len(st.session_state.merged_urls)}: {url}")
             data = extract_article(url)
             score, grade, metrics, extras = seo_analysis_struct(data)
+            row = {
+                "URL": url,
+                "SEO Score": score,
+                "SEO Grade": grade
+            }
+            for metric in metrics:
+                row[metric[0]] = metric[1]
+                row[metric[4]] = metric[5]
+            for k,v in extras.items():
+                row[k] = v
+            results.append(row)
+        df = pd.DataFrame(results)
 
-            row = {"URL": url, "Summary": extras["Summary"], "SEO Score": score, "SEO Grade": grade}
-            for actual_h, actual_v, ideal_h, ideal_v, verdict_h, verdict_v in metrics:
-                row[actual_h] = actual_v
-                row[ideal_h] = ideal_v
-                row[verdict_h] = verdict_v
-            rows.append(row)
-            progress.progress(int((i / len(urls)) * 100))
+        # Column guide sheet
+        guide_df = get_column_guide_df()
 
-        df = pd.DataFrame(rows)
-        st.success("✅ SEO Report generated successfully!")
-        st.dataframe(df, use_container_width=True)
-
-        excel_bytes = BytesIO()
-        with pd.ExcelWriter(excel_bytes, engine="openpyxl") as writer:
+        # Save to Excel
+        out_buffer = BytesIO()
+        with pd.ExcelWriter(out_buffer, engine="openpyxl") as writer:
             df.to_excel(writer, index=False, sheet_name="Audit")
-            get_column_guide_df().to_excel(writer, index=False, sheet_name="Column_Guide")
-        formatted_bytes = apply_excel_formatting(excel_bytes.getvalue())
+            guide_df.to_excel(writer, index=False, sheet_name="Column_Guide")
+        excel_bytes = apply_excel_formatting(out_buffer.getvalue())
 
-        st.download_button(
-            label="📥 Download Styled SEO Report",
-            data=formatted_bytes,
-            file_name="SEO_Audit_Report.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        st.success("✅ SEO Audit Completed!")
+        st.download_button("Download Excel Report", data=excel_bytes, file_name="SEO_Audit_Report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
