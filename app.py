@@ -45,7 +45,6 @@ def extract_article(url):
     try:
         if not url.lower().startswith(("http://","https://")):
             url = "https://" + url.lstrip("/")
-
         r = requests.get(url, headers=REQ_HEADERS, timeout=25)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
@@ -54,23 +53,29 @@ def extract_article(url):
         md = soup.find("meta", attrs={"name":"description"}) or soup.find("meta", attrs={"property":"og:description"})
         meta_desc = md.get("content").strip() if md and md.get("content") else ""
 
-        # --- MAIN NEWS CONTENT ONLY ---
-        news_container = soup.find("div", class_="storyDetail")
-        if not news_container:
-            news_container = soup  # fallback if container not found
+        # ---------------- ARTICLE CONTENT CONTAINER ----------------
+        # Patrika: <div class="article-content"> ya <div class="article-body"> type
+        article_container = soup.find("div", class_=re.compile(r'article(-)?(content|body)', re.I))
+        if not article_container:
+            article_container = soup  # fallback to whole page
 
-        paras = news_container.find_all("p")
-        article = " ".join([safe_get_text(p) for p in paras])
-        article = re.sub(r"\s+", " ", article)
+        # Paragraphs
+        paras = article_container.find_all("p")
+        paragraph_count = len([p for p in paras if safe_get_text(p)])
+        article_text = " ".join([safe_get_text(p) for p in paras])
+        article_text = re.sub(r"\s+", " ", article_text)
 
-        h1 = [safe_get_text(t) for t in news_container.find_all("h1")]
-        h2 = [safe_get_text(t) for t in news_container.find_all("h2")]
-
-        imgs = news_container.find_all("img")
+        # Images
+        imgs = article_container.find_all("img")
         img_count = len(imgs)
         alt_with = sum(1 for im in imgs if (im.get("alt") or "").strip())
 
-        anchors = news_container.find_all("a")
+        # Headings
+        h1 = [safe_get_text(t) for t in article_container.find_all("h1")]
+        h2 = [safe_get_text(t) for t in article_container.find_all("h2")]
+
+        # Links
+        anchors = article_container.find_all("a")
         internal_links = 0
         external_links = 0
         domain = urlparse(url).netloc.lower()
@@ -84,12 +89,13 @@ def extract_article(url):
             else:
                 internal_links += 1
 
-        paragraph_count = len([p for p in paras if safe_get_text(p)])
-        sentences = re.split(r"[.!?]\s+", article)
+        # Word & sentence count
+        sentences = re.split(r"[.!?]\s+", article_text)
         sentence_count = len([s for s in sentences if s.strip()])
-        words = article.split()
+        words = article_text.split()
         word_count = len(words)
         avg_words_per_sentence = round(word_count / max(1,sentence_count),2)
+
         summary = ""
         if sentence_count >= 1:
             summary = ". ".join([s.strip() for s in sentences[:2]])
@@ -110,6 +116,7 @@ def extract_article(url):
             "avg_words_per_sentence": avg_words_per_sentence,
             "summary": summary[:20]
         }
+
     except:
         return {
             "title":"", "meta":"", "h1":[], "h2":[],
@@ -344,5 +351,5 @@ if process:
             label="📥 Download Styled SEO Report",
             data=formatted_bytes,
             file_name="SEO_Audit_Report.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
