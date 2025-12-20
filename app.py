@@ -58,6 +58,7 @@ def extract_article(url):
         if main_content:
             paras = main_content.find_all("p")
             imgs = main_content.find_all("img")
+            # Only links inside paragraphs are considered content links
             anchors = []
             for p in paras:
                 anchors.extend(p.find_all("a"))
@@ -353,5 +354,6 @@ if process:
     file_name="SEO_Audit_Report.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
+
 
 
