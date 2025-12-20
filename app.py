@@ -54,22 +54,12 @@ def extract_article(url):
         meta_desc = md.get("content").strip() if md and md.get("content") else ""
 
         # ------------------ MAIN NEWS CONTENT ------------------
-        main_content = soup.find("div", class_="storyDetail")  # update class as per website
+        main_content = soup.find("div", class_="storyDetail")  # adjust class as per site
         if not main_content:
-            # Agar main content nahi mila, return zeros
             return {
-                "title": title,
-                "meta": meta_desc,
-                "h1": [],
-                "h2": [],
-                "img_count": 0,
-                "alt_with": 0,
-                "internal_links": 0,
-                "external_links": 0,
-                "paragraph_count": 0,
-                "word_count": 0,
-                "avg_words_per_sentence": 0,
-                "summary": ""
+                "title": title, "meta": meta_desc, "h1": [], "h2": [],
+                "img_count": 0, "alt_with": 0, "internal_links": 0, "external_links": 0,
+                "paragraph_count": 0, "word_count": 0, "avg_words_per_sentence": 0, "summary": ""
             }
 
         paras = main_content.find_all("p", recursive=True)
@@ -107,6 +97,7 @@ def extract_article(url):
         words = article.split()
         word_count = len(words)
         avg_words_per_sentence = round(word_count / max(1,sentence_count),2)
+
         summary = ""
         if sentence_count >= 1:
             summary = ". ".join([s.strip() for s in sentences[:2]])
@@ -131,12 +122,11 @@ def extract_article(url):
         print(f"Error extracting article: {e}")
         return {
             "title":"", "meta":"", "h1":[], "h2":[],
-            "img_count":0, "alt_with":0,
-            "internal_links":0, "external_links":0,
-            "paragraph_count":0, "word_count":0,
-            "avg_words_per_sentence":0,
+            "img_count":0, "alt_with":0, "internal_links":0, "external_links":0,
+            "paragraph_count":0, "word_count":0, "avg_words_per_sentence":0,
             "summary":""
         }
+
 # ---------------- VERDICT ----------------
 def verdict(actual, ideal_min=None, ideal_max=None, ideal_exact=None):
     try:
@@ -358,12 +348,8 @@ if process:
         formatted_bytes = apply_excel_formatting(excel_bytes.getvalue())
 
         st.download_button(
-    label="📥 Download Styled SEO Report",
-    data=formatted_bytes,
-    file_name="SEO_Audit_Report.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-)
-
-
-
-
+            label="📥 Download Styled SEO Report",
+            data=formatted_bytes,
+            file_name="SEO_Audit_Report.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
