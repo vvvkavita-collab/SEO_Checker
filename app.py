@@ -54,27 +54,36 @@ def extract_article(url):
         meta_desc = md.get("content").strip() if md and md.get("content") else ""
 
         # ------------------ MAIN NEWS CONTENT ------------------
-        main_content = soup.find("div", class_="storyDetail")
-        if main_content:
-            paras = main_content.find_all("p")
-            imgs = main_content.find_all("img")
-            # Only links inside paragraphs are considered content links
-            anchors = []
-            for p in paras:
-                anchors.extend(p.find_all("a"))
-        else:
-            paras = soup.find_all("p")
-            imgs = soup.find_all("img")
-            anchors = []
-            for p in paras:
-                anchors.extend(p.find_all("a"))
+        main_content = soup.find("div", class_="storyDetail")  # update class as per website
+        if not main_content:
+            # Agar main content nahi mila, return zeros
+            return {
+                "title": title,
+                "meta": meta_desc,
+                "h1": [],
+                "h2": [],
+                "img_count": 0,
+                "alt_with": 0,
+                "internal_links": 0,
+                "external_links": 0,
+                "paragraph_count": 0,
+                "word_count": 0,
+                "avg_words_per_sentence": 0,
+                "summary": ""
+            }
+
+        paras = main_content.find_all("p", recursive=True)
+        imgs = main_content.find_all("img", recursive=True)
+        anchors = []
+        for p in paras:
+            anchors.extend(p.find_all("a", recursive=True))
         # -------------------------------------------------------
 
         article = " ".join([safe_get_text(p) for p in paras])
         article = re.sub(r"\s+", " ", article)
 
-        h1 = [safe_get_text(t) for t in soup.find_all("h1")]
-        h2 = [safe_get_text(t) for t in soup.find_all("h2")]
+        h1 = [safe_get_text(t) for t in main_content.find_all("h1", recursive=True)]
+        h2 = [safe_get_text(t) for t in main_content.find_all("h2", recursive=True)]
 
         img_count = len(imgs)
         alt_with = sum(1 for im in imgs if (im.get("alt") or "").strip())
@@ -118,7 +127,8 @@ def extract_article(url):
             "avg_words_per_sentence": avg_words_per_sentence,
             "summary": summary[:20]
         }
-    except:
+    except Exception as e:
+        print(f"Error extracting article: {e}")
         return {
             "title":"", "meta":"", "h1":[], "h2":[],
             "img_count":0, "alt_with":0,
@@ -127,7 +137,6 @@ def extract_article(url):
             "avg_words_per_sentence":0,
             "summary":""
         }
-
 # ---------------- VERDICT ----------------
 def verdict(actual, ideal_min=None, ideal_max=None, ideal_exact=None):
     try:
@@ -354,6 +363,7 @@ if process:
     file_name="SEO_Audit_Report.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
+
 
 
 
