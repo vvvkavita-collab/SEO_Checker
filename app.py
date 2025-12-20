@@ -53,17 +53,21 @@ def extract_article(url):
         md = soup.find("meta", attrs={"name":"description"}) or soup.find("meta", attrs={"property":"og:description"})
         meta_desc = md.get("content").strip() if md and md.get("content") else ""
 
-        # ------------------ TARGET MAIN ARTICLE ------------------
-        article_container = soup.find("article") or soup.find("div", class_=re.compile(r"(content|article|story|main)", re.I))
-        if article_container:
-            paras = article_container.find_all("p")
-            imgs = article_container.find_all("img")
-            anchors = article_container.find_all("a")
+        # ------------------ MAIN NEWS CONTENT ------------------
+        main_content = soup.find("div", class_="storyDetail")
+        if main_content:
+            paras = main_content.find_all("p")
+            imgs = main_content.find_all("img")
+            anchors = []
+            for p in paras:
+                anchors.extend(p.find_all("a"))
         else:
             paras = soup.find_all("p")
             imgs = soup.find_all("img")
-            anchors = soup.find_all("a")
-        # ----------------------------------------------------------
+            anchors = []
+            for p in paras:
+                anchors.extend(p.find_all("a"))
+        # -------------------------------------------------------
 
         article = " ".join([safe_get_text(p) for p in paras])
         article = re.sub(r"\s+", " ", article)
@@ -347,5 +351,4 @@ if process:
             label="📥 Download Styled SEO Report",
             data=formatted_bytes,
             file_name="SEO_Audit_Report.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
+            mime="application/vnd.openxmlformats-officedocument.sp
