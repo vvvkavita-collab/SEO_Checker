@@ -1,190 +1,195 @@
 import streamlit as st
-import pandas as pd
 import requests
+import pandas as pd
 from bs4 import BeautifulSoup
-import re
 from urllib.parse import urlparse
 from io import BytesIO
 from openpyxl import load_workbook
-from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
+from openpyxl.styles import PatternFill
 
-# ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="Advanced SEO Auditor – Premium Edition", layout="wide")
+# ---------------- CONFIG ----------------
+st.set_page_config(page_title="Advanced SEO Auditor", layout="wide")
 
-# ---------------- SEO MODE ----------------
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+}
+
+# ---------------- UI ----------------
+st.title("🧠 Advanced SEO Auditor – News & Blog")
+
 st.sidebar.title("SEO Mode")
 SEO_MODE = st.sidebar.radio("Select Content Type", ["News Article", "Blog / Evergreen"])
 
-# ---------------- CSS ----------------
-st.markdown("""
-<style>
-header, footer, #MainMenu {display:none;}
-.good {color:#00ff88;font-weight:bold;}
-.bad {color:#ff6b6b;font-weight:bold;}
-</style>
-""", unsafe_allow_html=True)
+urls_input = st.text_area("Paste URLs (one per line)", height=150)
 
-# ---------------- SAFE TEXT ----------------
-def safe_text(tag):
-    try: return tag.get_text(" ", strip=True)
-    except: return ""
-
-# ---------------- REQUEST ----------------
-HEADERS = {"User-Agent":"Mozilla/5.0"}
-
-# ---------------- MAIN CONTENT EXTRACTOR ----------------
+# ---------------- CORE EXTRACTION ----------------
 def extract_article(url):
-    if not url.startswith("http"):
-        url = "https://" + url
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=20)
+        soup = BeautifulSoup(r.text, "html.parser")
 
-    r = requests.get(url, headers=HEADERS, timeout=20)
-    soup = BeautifulSoup(r.text, "html.parser")
+        # ----- TITLE & META -----
+        title = soup.title.text.strip() if soup.title else ""
+        meta = soup.find("meta", attrs={"name": "description"})
+        meta_desc = meta["content"].strip() if meta else ""
 
-    # -------- TITLE & META --------
-    title = soup.title.text.strip() if soup.title else ""
-    meta_desc = ""
-    md = soup.find("meta", attrs={"name": "description"})
-    if md:
-        meta_desc = md.get("content", "").strip()
+        # ----- H1 -----
+        h1 = soup.find("h1").get_text(strip=True) if soup.find("h1") else ""
 
-    # -------- MAIN HEADLINE (H1) --------
-    h1 = ""
-    h1_tag = soup.find("h1")
-    if h1_tag:
-        h1 = h1_tag.get_text(strip=True)
+        # ----- MAIN CONTENT (PATRiKA SAFE) -----
+        story_box = soup.find("div", class_="storyDetail")
+        story = story_box.find("div", class_="storyContent") if story_box else None
+        if not story:
+            return None
 
-    # -------- MAIN STORY CONTENT (CRITICAL FIX) --------
-    story_box = soup.find("div", class_="storyDetail")
-    story_content = None
+        paragraphs = [
+            p.get_text(" ", strip=True)
+            for p in story.find_all("p")
+            if len(p.get_text(strip=True)) > 40
+        ]
 
-    if story_box:
-        story_content = story_box.find("div", class_="storyContent")
+        images = story.find_all("img")
+        alt_count = sum(1 for img in images if img.get("alt"))
 
-    if not story_content:
-        return None  # agar article hi nahi mila
+        h2s = story.find_all("h2")
 
-    # -------- PARAGRAPHS --------
-    paragraphs = [
-        p.get_text(" ", strip=True)
-        for p in story_content.find_all("p")
-        if len(p.get_text(strip=True)) > 40
-    ]
-
-    # -------- IMAGES --------
-    images = story_content.find_all("img")
-
-    # -------- ALT TAG COUNT --------
-    alt_count = sum(1 for img in images if img.get("alt"))
-
-    # -------- HEADINGS H2 --------
-    h2s = [
-        h.get_text(strip=True)
-        for h in story_content.find_all("h2")
-    ]
-
-    # -------- LINKS (ONLY INSIDE STORY) --------
-    domain = urlparse(url).netloc
-    internal = external = 0
-
-    for a in story_content.find_all("a", href=True):
-        href = a["href"]
-        if href.startswith("http"):
-            if domain in href:
-                internal += 1
+        domain = urlparse(url).netloc
+        internal = external = 0
+        for a in story.find_all("a", href=True):
+            href = a["href"]
+            if href.startswith("http"):
+                if domain in href:
+                    internal += 1
+                else:
+                    external += 1
             else:
-                external += 1
-        else:
-            internal += 1
+                internal += 1
 
-    # -------- WORD COUNT --------
-    full_text = " ".join(paragraphs)
-    words = full_text.split()
+        words = " ".join(paragraphs).split()
 
-    return {
-        "Title": title,
-        "Title Length": len(title),
-        "Meta Description": meta_desc,
-        "Meta Length": len(meta_desc),
-        "H1": h1,
-        "H1 Length": len(h1),
-        "H2 Count": len(h2s),
-        "Paragraph Count": len(paragraphs),
-        "Word Count": len(words),
-        "Image Count": len(images),
-        "Alt Tag Count": alt_count,
-        "Internal Links": internal,
-        "External Links": external
-    }
+        return {
+            "URL": url,
+            "Title Length": len(title),
+            "Meta Length": len(meta_desc),
+            "H1 Length": len(h1),
+            "H2 Count": len(h2s),
+            "Word Count": len(words),
+            "Paragraph Count": len(paragraphs),
+            "Image Count": len(images),
+            "Alt Tags": alt_count,
+            "Internal Links": internal,
+            "External Links": external
+        }
 
-# ---------------- IDEAL RANGES ----------------
-IDEAL = {
-    "News Article":{
-        "Words":"250+",
-        "Paragraphs":"4+",
-        "Images":"1+",
-        "Internal Links":"2–10",
-        "External Links":"1–5"
-    }
-}
+    except:
+        return None
 
-# ---------------- SCORE ----------------
+# ---------------- SCORING ----------------
 def score_news(d):
-    score = 0
+    if not d:
+        return 0
 
+    score = 0
     score += 15 if d["Word Count"] >= 250 else 0
     score += 10 if d["Paragraph Count"] >= 4 else 0
     score += 10 if d["Image Count"] >= 1 else 0
     score += 10 if d["H1 Length"] >= 20 else 0
     score += 10 if d["Meta Length"] >= 70 else 0
-
     return score
 
-# ---------------- UI ----------------
-st.title("🚀 Advanced SEO Auditor – Premium Edition")
-urls = st.text_area("Paste URLs (one per line)", height=180)
+def seo_grade(score):
+    if score >= 85: return "A+"
+    if score >= 70: return "A"
+    if score >= 55: return "B"
+    if score >= 40: return "C"
+    return "D"
 
+# ---------------- IDEAL RANGE ----------------
+IDEAL = {
+    "Word Count": "250+",
+    "Paragraph Count": "4+",
+    "Image Count": "1+",
+    "Internal Links": "2–10",
+    "External Links": "0–2",
+    "Meta Length": "70–160",
+    "H1 Length": "20–70"
+}
+
+def verdict(actual, key):
+    if key == "Internal Links":
+        return "✅" if 2 <= actual <= 10 else "❌"
+    if key == "External Links":
+        return "✅" if actual <= 2 else "❌"
+    if key == "Meta Length":
+        return "✅" if 70 <= actual <= 160 else "❌"
+    if key == "H1 Length":
+        return "✅" if actual >= 20 else "❌"
+    if key == "Word Count":
+        return "✅" if actual >= 250 else "❌"
+    if key == "Paragraph Count":
+        return "✅" if actual >= 4 else "❌"
+    if key == "Image Count":
+        return "✅" if actual >= 1 else "❌"
+    return "❌"
+
+# ---------------- ANALYZE ----------------
 if st.button("Analyze"):
-    rows=[]
-    for url in urls.splitlines():
-        if not url.strip(): continue
-        d = extract_article(url)
-        score = score_news(d)
-        grade = "A" if score>=80 else "B" if score>=60 else "C" if score>=40 else "D"
+    rows = []
 
-        rows.append({
-            "URL":url,
-            "SEO Score":score,
-            "SEO Grade":grade,
-            "Words Actual":d["word_count"],
-            "Words Ideal":IDEAL["News Article"]["Words"],
-            "Paragraph Actual":d["paragraph_count"],
-            "Paragraph Ideal":IDEAL["News Article"]["Paragraphs"],
-            "Image Actual":d["img_count"],
-            "Image Ideal":IDEAL["News Article"]["Images"],
-            "Internal Links Actual":d["internal_links"],
-            "Internal Links Ideal":IDEAL["News Article"]["Internal Links"],
-            "External Links Actual":d["external_links"],
-            "External Links Ideal":IDEAL["News Article"]["External Links"]
-        })
+    for url in urls_input.splitlines():
+        url = url.strip()
+        if not url:
+            continue
 
-    df=pd.DataFrame(rows)
+        data = extract_article(url)
+        if not data:
+            st.warning(f"Content not detected: {url}")
+            continue
+
+        score = score_news(data) if SEO_MODE == "News Article" else score_news(data)
+        grade = seo_grade(score)
+
+        for k in IDEAL:
+            rows.append({
+                "URL": url,
+                "Metric": k,
+                "Actual": data.get(k, 0),
+                "Ideal": IDEAL[k],
+                "Verdict": verdict(data.get(k, 0), k),
+                "SEO Score": score,
+                "SEO Grade": grade
+            })
+
+    df = pd.DataFrame(rows)
     st.dataframe(df, use_container_width=True)
 
-    # ---------------- EXPLANATION SHEET ----------------
-    explain = pd.DataFrame([
-        ["Title","Main heading of news","Google relevance & CTR"],
-        ["Paragraph","Breaks content","Better readability"],
-        ["Images","Visual support","Engagement + Discover"],
-        ["Internal Links","Same site links","Crawl & authority"],
-        ["External Links","Outside reference","Trust & credibility"]
-    ], columns=["SEO Element","What it means","Why important"])
+    # ---------------- EXCEL DOWNLOAD ----------------
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="SEO Audit")
 
-    excel = BytesIO()
-    with pd.ExcelWriter(excel, engine="openpyxl") as w:
-        df.to_excel(w,index=False,sheet_name="Audit")
-        explain.to_excel(w,index=False,sheet_name="SEO_Explain")
+        edu = pd.DataFrame({
+            "Heading": ["H1", "H2", "Meta Description"],
+            "Why Important": [
+                "Primary topic for Google",
+                "Content structure & clarity",
+                "CTR & search snippet"
+            ],
+            "If Correct": [
+                "Better ranking relevance",
+                "Improved readability",
+                "Higher click-through"
+            ],
+            "If Wrong": [
+                "Ranking confusion",
+                "Poor UX",
+                "Low CTR"
+            ]
+        })
+        edu.to_excel(writer, index=False, sheet_name="SEO Education")
 
-    st.download_button("📥 Download SEO Report", excel.getvalue(),
-        file_name="SEO_Audit_Report.xlsx")
-
-
+    st.download_button(
+        "📥 Download SEO Report",
+        output.getvalue(),
+        file_name="SEO_Audit_Report.xlsx"
+    )
