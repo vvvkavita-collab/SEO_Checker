@@ -10,7 +10,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 # ================= PAGE CONFIG =================
 st.set_page_config(page_title="Advanced SEO Auditor – Director Edition", layout="wide")
-st.title("🧠 Advanced SEO Auditor – News & Blog (Director Edition)")
+st.title("🧠 Advanced SEO Auditor – News & Blog")
 
 # ================= SIDEBAR =================
 st.sidebar.header("SEO Mode")
@@ -20,7 +20,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("Analyze Options")
 bulk_file = st.sidebar.file_uploader("Upload Bulk URLs (TXT / CSV)", type=["txt", "csv"])
 
-url = st.text_input("Paste Single URL")
+url = st.text_input("Paste URL")
 analyze = st.button("Analyze")
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
@@ -34,7 +34,7 @@ def get_soup(url):
 def get_article(soup):
     return soup.find("article") or soup.find("div", class_=re.compile("content|story", re.I)) or soup
 
-# -------- CLEAN PARAGRAPHS (REAL CONTENT ONLY) --------
+# -------- REAL PARAGRAPHS --------
 def get_real_paragraphs(article):
     paras = []
     for p in article.find_all("p"):
@@ -46,21 +46,24 @@ def get_real_paragraphs(article):
         paras.append(text)
     return paras
 
-# -------- IMAGE COUNT (REAL NEWS IMAGE) --------
+# -------- FIXED IMAGE COUNT (NEWS SAFE) --------
 def get_real_images(article):
     images = []
-    for fig in article.find_all("figure"):
-        img = fig.find("img")
-        if img and img.get("src"):
-            images.append(img)
 
-    if not images:
-        for img in article.find_all("img"):
-            src = img.get("src", "")
-            if src and not any(x in src.lower() for x in ["logo", "icon", "sprite", "ads"]):
-                images.append(img)
+    for img in article.find_all("img"):
+        src = (
+            img.get("src")
+            or img.get("data-src")
+            or img.get("data-original")
+            or ""
+        )
+        if not src:
+            continue
+        if any(x in src.lower() for x in ["logo", "icon", "sprite", "ads"]):
+            continue
+        images.append(src)
 
-    return images[:1]
+    return list(set(images))[:1]  # only hero image
 
 # -------- LINKS --------
 def get_links(article, domain):
@@ -77,42 +80,31 @@ def get_links(article, domain):
                 internal += 1
     return internal, external
 
-# -------- META CLEAN --------
-def clean_meta(text):
-    return " ".join(text.replace("\n", " ").split()).strip()
-
-# ================= SEO TITLE GENERATOR (EDITOR LOGIC) =================
+# ================= SEO TITLE GENERATOR =================
 def generate_seo_title(original_title, paragraphs):
-    text = " ".join(paragraphs)[:1200]
+    text = " ".join(paragraphs).lower()
 
-    if re.search(r"emergency|इमरजेंसी", text, re.I):
-        reason = ""
-        if re.search(r"engine|इंजन", text, re.I):
-            reason = "इंजन में खराबी"
-        elif re.search(r"technical|तकनीकी", text, re.I):
-            reason = "तकनीकी खराबी"
-        else:
-            reason = "तकनीकी कारण"
+    if "emergency" in text or "इमरजेंसी" in text:
+        if "engine" in text or "इंजन" in text:
+            return "Air India विमान की इमरजेंसी लैंडिंग, इंजन में खराबी बनी वजह"
+        return "Air India विमान की इमरजेंसी लैंडिंग, तकनीकी कारण बना वजह"
 
-        return f"Air India विमान की इमरजेंसी लैंडिंग, {reason} बनी वजह"
+    if "हादसा" in text or "accident" in text:
+        return "Air India विमान से जुड़ी बड़ी घटना, जांच शुरू"
 
-    if re.search(r"accident|हादसा|दुर्घटना", text, re.I):
-        return "हादसा: Air India विमान से जुड़ी बड़ी घटना, जांच जारी"
+    return original_title[:60].rsplit(" ", 1)[0]
 
-    if re.search(r"delay|लेट|रद्द", text, re.I):
-        return "Air India की उड़ान प्रभावित, यात्रियों को हुई परेशानी"
+# ================= EXCEL FORMAT =================
+def format_excel(df):
+    output = BytesIO()
+    df.to_excel(output, index=False)
+    output.seek(0)
 
-    # SAFE FALLBACK
-    cut = original_title[:60]
-    return cut.rsplit(" ", 1)[0] if " " in cut else cut
-
-# ================= EXCEL FORMATTER =================
-def format_excel(file_bytes):
-    wb = load_workbook(file_bytes)
+    wb = load_workbook(output)
     ws = wb.active
 
     header_fill = PatternFill("solid", fgColor="D9EAF7")
-    bold_font = Font(bold=True)
+    bold = Font(bold=True)
     border = Border(
         left=Side(style="thin"),
         right=Side(style="thin"),
@@ -121,7 +113,7 @@ def format_excel(file_bytes):
     )
 
     for cell in ws[1]:
-        cell.font = bold_font
+        cell.font = bold
         cell.fill = header_fill
         cell.alignment = Alignment(wrap_text=True, horizontal="center")
         cell.border = border
@@ -133,69 +125,64 @@ def format_excel(file_bytes):
 
     ws.sheet_view.showGridLines = False
 
-    out = BytesIO()
-    wb.save(out)
-    out.seek(0)
-    return out
+    final = BytesIO()
+    wb.save(final)
+    final.seek(0)
+    return final
 
-# ================= MAIN ANALYSIS =================
+# ================= ANALYSIS =================
 def analyze_url(url):
     soup = get_soup(url)
-    domain = urlparse(url).netloc
     article = get_article(soup)
+    domain = urlparse(url).netloc
 
     title = soup.find("h1").get_text(strip=True)
-    meta_tag = soup.find("meta", attrs={"name": "description"})
-    meta = clean_meta(meta_tag["content"]) if meta_tag else ""
+    title_len = len(title)
 
     paragraphs = get_real_paragraphs(article)
+    word_count = sum(len(p.split()) for p in paragraphs)
+
+    images = get_real_images(article)
+    img_count = len(images)
+
+    h1_count = len(article.find_all("h1"))
+    h2_count = len(article.find_all("h2"))
+
+    internal, external = get_links(article, domain)
 
     seo_title = generate_seo_title(title, paragraphs)
 
-    return {
-        "URL": url,
-        "Original Title": title,
-        "Suggested SEO Title": seo_title,
-        "Title Length": len(title),
-        "Word Count": sum(len(p.split()) for p in paragraphs),
-        "Image Count": len(get_real_images(article)),
-        "H1 Count": len(article.find_all("h1")),
-        "H2 Count": len(article.find_all("h2")),
-        "Internal Links": get_links(article, domain)[0],
-        "External Links": get_links(article, domain)[1],
-    }
+    return [
+        ["Title Character Count", title_len, "≤ 60", "❌" if title_len > 60 else "✅"],
+        ["Suggested SEO Title", seo_title, "Auto Optimized", "—"],
+        ["Word Count", word_count, "250+", "✅" if word_count >= 250 else "❌"],
+        ["News Image Count", img_count, "1+", "✅" if img_count >= 1 else "❌"],
+        ["H1 Count", h1_count, "1", "✅" if h1_count == 1 else "❌"],
+        ["H2 Count", h2_count, "2+", "✅" if h2_count >= 2 else "❌"],
+        ["Internal Links", internal, "2–10", "❌" if internal < 2 else "✅"],
+        ["External Links", external, "0–2", "❌" if external > 2 else "✅"],
+    ]
 
 # ================= RUN =================
-results = []
-
 if analyze:
     urls = []
 
     if bulk_file:
-        content = bulk_file.read().decode("utf-8").splitlines()
-        urls.extend([u.strip() for u in content if u.strip()])
+        lines = bulk_file.read().decode("utf-8").splitlines()
+        urls = [l.strip() for l in lines if l.strip()]
     elif url:
-        urls.append(url)
+        urls = [url]
 
     for u in urls:
-        try:
-            results.append(analyze_url(u))
-        except Exception:
-            pass
+        data = analyze_url(u)
+        df = pd.DataFrame(data, columns=["Metric", "Actual", "Ideal", "Verdict"])
 
-    if results:
-        df = pd.DataFrame(results)
         st.subheader("📊 SEO Audit Report")
         st.dataframe(df, use_container_width=True)
 
-        excel = BytesIO()
-        df.to_excel(excel, index=False)
-        excel.seek(0)
-
-        formatted_excel = format_excel(excel)
-
+        excel = format_excel(df)
         st.download_button(
-            "⬇️ Download Formatted SEO Report (Director Ready)",
-            formatted_excel,
+            "⬇️ Download Formatted SEO Report",
+            excel,
             "SEO_Audit_Report.xlsx"
         )
