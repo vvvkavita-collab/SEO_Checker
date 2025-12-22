@@ -3,8 +3,3 @@ pandas
 requests
 beautifulsoup4
 openpyxl
-
-
-
-
-
