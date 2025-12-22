@@ -8,12 +8,11 @@ import re
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-import unicodedata
 from collections import Counter
 
 # ================= PAGE CONFIG =================
 st.set_page_config(page_title="Advanced SEO Auditor – Director Edition", layout="wide")
-st.title("🧠 Advanced SEO Auditor – News & Blog")
+st.title("🧠 Advanced SEO Auditor – News & Blog (Editor Edition)")
 
 # ================= SIDEBAR =================
 st.sidebar.header("SEO Mode")
@@ -34,24 +33,7 @@ def get_soup(url):
 def get_article(soup):
     return soup.find("article") or soup.find("div", class_=re.compile("content|story", re.I)) or soup
 
-# -------- IMAGE LOGIC --------
-def get_real_images(article):
-    images = []
-    for fig in article.find_all("figure"):
-        img = fig.find("img")
-        if img:
-            src = img.get("src") or ""
-            if src and not any(x in src.lower() for x in ["logo", "icon", "sprite", "ads"]):
-                images.append(img)
-    if not images:
-        for img in article.find_all("img"):
-            cls = " ".join(img.get("class", []))
-            src = img.get("src") or ""
-            if any(x in cls.lower() for x in ["featured", "post", "hero"]) and src:
-                images.append(img)
-    return images[:1]
-
-# -------- PARAGRAPHS --------
+# ================= PARAGRAPHS =================
 def get_real_paragraphs(article):
     paras = []
     for p in article.find_all("p"):
@@ -63,107 +45,123 @@ def get_real_paragraphs(article):
         paras.append(text)
     return paras
 
-# -------- LINKS --------
+# ================= IMAGE =================
+def get_real_images(article):
+    imgs = []
+    for img in article.find_all("img"):
+        src = img.get("src", "")
+        if src and not any(x in src.lower() for x in ["logo", "icon", "ads", "sprite"]):
+            imgs.append(img)
+    return imgs[:1]
+
+# ================= LINKS =================
 def get_links(article, domain):
     internal = external = 0
-    for p in article.find_all("p"):
-        for a in p.find_all("a", href=True):
-            h = a["href"]
-            if h.startswith("http"):
-                if domain in h:
-                    internal += 1
-                else:
-                    external += 1
-            else:
+    for a in article.find_all("a", href=True):
+        h = a["href"]
+        if h.startswith("http"):
+            if domain in h:
                 internal += 1
+            else:
+                external += 1
+        else:
+            internal += 1
     return internal, external
 
-# ================= SEO TITLE (keyword-based) =================
-def generate_seo_title_from_content(title, article_text, max_len=100):
-    stopwords = set([
-        "the","is","at","which","on","and","a","an","for","to","of","in","with",
-        "that","this","as","by","from","it","be","or","are","was","has","have",
-        "है","और","को","का","की","में","से","पर","कर","हो","इस"
+# ================= H2 COUNT =================
+def get_h2_count_fixed(article):
+    real = []
+    for h2 in article.find_all("h2"):
+        t = h2.get_text(strip=True)
+        if len(t) < 20:
+            continue
+        if re.search(r"(advertisement|subscribe|related)", t, re.I):
+            continue
+        real.append(h2)
+    return len(real)
+
+# ================= SEO TITLE (EDITORIAL) =================
+def generate_editorial_seo_title(article_text, max_len=100):
+    stop = set([
+        "है","और","को","का","की","में","से","पर","कर","हो","इस",
+        "the","is","at","on","and","a","an","for","to","of","in","with"
     ])
-    words = re.findall(r'[\w\u0900-\u097F]+', article_text.lower())
-    freq_words = [w for w in words if w not in stopwords and len(w) > 2]
-    counter = Counter(freq_words)
-    top_keywords = [w for w, c in counter.most_common(5)]
-    
-    seo_title = title
-    for kw in top_keywords:
-        if len(seo_title + " " + kw) <= max_len:
-            seo_title += " " + kw
-        else:
-            break
+
+    words = re.findall(r'[\w\u0900-\u097F]+', article_text)
+    words = [w for w in words if w not in stop and len(w) > 3]
+
+    freq = Counter(words)
+    top = [w for w, _ in freq.most_common(5)]
+
+    year = re.search(r'20\d{2}', article_text)
+    num = re.search(r'\d+\s*लाख|\d+\s*हजार|\d+', article_text)
+
+    title_parts = []
+
+    if top:
+        title_parts.append(top[0])
+
+    if year:
+        title_parts.append(year.group())
+
+    if num:
+        title_parts.append(f": {num.group()}+")
+
+    context = " ".join(top[1:4])
+    seo_title = " ".join(title_parts) + " " + context
+    seo_title = seo_title.strip(" :-,")
+
+    if len(seo_title) > max_len:
+        seo_title = seo_title[:max_len].rsplit(" ", 1)[0]
+
     return seo_title
 
-# ================= TRENDING WORDS =================
-def extract_trending_words(article_text, top_n=5):
-    words = re.findall(r'[\w\u0900-\u097F]+', article_text.lower())
-    stopwords = set([
-        "the","is","at","which","on","and","a","an","for","to","of","in","with",
-        "that","this","as","by","from","it","be","or","are","was","has","have",
-        "है","और","को","का","की","में","से","पर","कर","हो","इस"
-    ])
-    valid_words = [w for w in words if w not in stopwords and len(w)>2]
-    counter = Counter(valid_words)
-    return [w for w, c in counter.most_common(top_n)]
+# ================= GOOGLE DISCOVER TITLE =================
+def generate_discover_title(article_text, max_len=90):
+    hooks = ["बड़ी खबर", "जानिए", "अब तय", "सरकार का फैसला", "सबसे बड़ा अपडेट"]
 
-def trending_words_analysis(article_text, trending_words):
-    results = []
-    text_lower = article_text.lower()
-    for word in trending_words:
-        count = text_lower.count(word.lower())
-        verdict = "✅ Good" if 1 <= count <= 3 else "❌ Check"
-        results.append([word, count, "Max 3 times", verdict])
-    return results
+    words = re.findall(r'[\w\u0900-\u097F]+', article_text)
+    freq = Counter(words)
+    top = [w for w, _ in freq.most_common(4)]
 
-# ================= EXCEL FORMAT =================
+    hook = hooks[0]
+    discover = f"{hook}: " + " ".join(top)
+
+    if len(discover) > max_len:
+        discover = discover[:max_len].rsplit(" ", 1)[0]
+
+    return discover
+
+# ================= EXCEL =================
 def format_excel(df):
     output = BytesIO()
     df.to_excel(output, index=False)
     output.seek(0)
     wb = load_workbook(output)
     ws = wb.active
-    header_fill = PatternFill("solid", fgColor="D9EAF7")
-    bold = Font(bold=True)
+
     border = Border(
         left=Side(style="thin"), right=Side(style="thin"),
         top=Side(style="thin"), bottom=Side(style="thin")
     )
-    for col in ws.columns:
-        max_len = max(len(str(cell.value)) if cell.value else 0 for cell in col)
-        ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 3, 50)
+
     for cell in ws[1]:
-        cell.font = bold
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill("solid", fgColor="D9EAF7")
         cell.border = border
+        cell.alignment = Alignment(horizontal="center")
+
     for row in ws.iter_rows(min_row=2):
         for cell in row:
-            cell.alignment = Alignment(vertical="top", wrap_text=True)
             cell.border = border
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+
     ws.sheet_view.showGridLines = False
+
     final = BytesIO()
     wb.save(final)
     final.seek(0)
     return final
-
-# ================= H2 COUNT =================
-def get_h2_count_fixed(article):
-    h2s = article.find_all("h2")
-    real_h2 = []
-    for idx, h2 in enumerate(h2s):
-        text = h2.get_text(strip=True)
-        if idx == 0 and len(text) > 100:
-            continue
-        if re.search(r"(advertisement|related|subscribe|promo|sponsored|news in short)", text, re.I):
-            continue
-        if len(text) < 20:
-            continue
-        real_h2.append(h2)
-    return len(real_h2)
 
 # ================= ANALYSIS =================
 def analyze_url(url):
@@ -172,63 +170,45 @@ def analyze_url(url):
     domain = urlparse(url).netloc
 
     title_tag = soup.find("h1")
-    title = title_tag.get_text(strip=True) if title_tag else "No H1 Found"
-    title_len = len(title)
+    title = title_tag.get_text(strip=True) if title_tag else "No H1"
 
-    paragraphs = get_real_paragraphs(article)
-    word_count = sum(len(p.split()) for p in paragraphs)
-    article_text = " ".join(paragraphs)
+    paras = get_real_paragraphs(article)
+    text = " ".join(paras)
 
-    img_count = len(get_real_images(article))
-    h1_count = len(article.find_all("h1"))
-    h2_count = get_h2_count_fixed(article)
-    internal, external = get_links(article, domain)
-
-    seo_title = generate_seo_title_from_content(title, article_text, max_len=100)
+    seo_title = generate_editorial_seo_title(text)
+    discover_title = generate_discover_title(text)
 
     data = [
-        ["Title Character Count", title_len, "≤ 60", "❌" if title_len > 60 else "✅"],
-        ["Suggested SEO Title", title, seo_title, "—"],
-        ["Word Count", word_count, "250+", "✅" if word_count >= 250 else "❌"],
-        ["News Image Count", img_count, "1+", "✅" if img_count >= 1 else "❌"],
-        ["H1 Count", h1_count, "1", "✅" if h1_count == 1 else "❌"],
-        ["H2 Count", h2_count, "2+", "✅" if h2_count >= 2 else "❌"],
-        ["Internal Links", internal, "2–10", "❌" if internal < 2 else "✅"],
-        ["External Links", external, "0–2", "❌" if external > 2 else "✅"],
+        ["Original Title", title, "-", "-"],
+        ["Suggested SEO Title", seo_title, "≤100 chars", "✅"],
+        ["Google Discover Title", discover_title, "≤90 chars", "🔥"],
+        ["Word Count", len(text.split()), "250+", "✅" if len(text.split()) >= 250 else "❌"],
+        ["Image Count", len(get_real_images(article)), "1+", "✅"],
+        ["H1 Count", len(article.find_all("h1")), "1", "✅"],
+        ["H2 Count", get_h2_count_fixed(article), "2+", "✅"],
     ]
 
-    trending_words = extract_trending_words(article_text)
-    trending_data = trending_words_analysis(article_text, trending_words)
-
-    return data, trending_data
+    return data
 
 # ================= RUN =================
 if analyze:
     urls = []
     if bulk_file:
-        lines = bulk_file.read().decode("utf-8").splitlines()
-        urls = [l.strip() for l in lines if l.strip()]
+        urls = bulk_file.read().decode().splitlines()
     elif url:
         urls = [url]
 
-    for idx, u in enumerate(urls):
-        data, trending_data = analyze_url(u)
+    for i, u in enumerate(urls):
+        data = analyze_url(u)
         df = pd.DataFrame(data, columns=["Metric", "Actual", "Ideal", "Verdict"])
 
-        st.subheader(f"📊 SEO Audit Report – URL {idx+1}")
+        st.subheader(f"📊 SEO Audit Report – URL {i+1}")
         st.dataframe(df, use_container_width=True)
 
-        # Trending Keywords Table
-        if trending_data:
-            df_trend = pd.DataFrame(trending_data, columns=["Trending Word", "Count in Article", "Ideal", "Verdict"])
-            st.subheader("🔥 Trending Keywords Usage")
-            st.dataframe(df_trend, use_container_width=True)
-
-        # Excel download
         excel = format_excel(df)
         st.download_button(
-            label="⬇️ Download Director Ready SEO Report",
-            data=excel,
-            file_name=f"SEO_Audit_Report_{idx+1}.xlsx",
-            key=f"download_{idx}"
+            "⬇️ Download Director Ready SEO Report",
+            excel,
+            f"SEO_Audit_Report_{i+1}.xlsx",
+            key=i
         )
