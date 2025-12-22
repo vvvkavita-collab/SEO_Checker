@@ -78,63 +78,79 @@ def get_links(article, domain):
                 internal += 1
     return internal, external
 
-# ================= SEO TITLE =================
-def generate_seo_title(title, max_len=100):
-    """Unicode-safe truncate of title without cutting last word"""
-    words = title.split()
-    result = ""
-
-    def visible_len(s):
-        return sum(1 for c in s if not unicodedata.category(c).startswith("C"))
-
-    for w in words:
-        candidate = (result + " " + w).strip() if result else w
-        if visible_len(candidate) > max_len:
+# ================= SEO TITLE (keyword-based) =================
+def generate_seo_title_from_content(title, article_text, max_len=100):
+    stopwords = set([
+        "the","is","at","which","on","and","a","an","for","to","of","in","with",
+        "that","this","as","by","from","it","be","or","are","was","has","have",
+        "है","और","को","का","की","में","से","पर","कर","हो","इस"
+    ])
+    words = re.findall(r'[\w\u0900-\u097F]+', article_text.lower())
+    freq_words = [w for w in words if w not in stopwords and len(w) > 2]
+    counter = Counter(freq_words)
+    top_keywords = [w for w, c in counter.most_common(5)]
+    
+    seo_title = title
+    for kw in top_keywords:
+        if len(seo_title + " " + kw) <= max_len:
+            seo_title += " " + kw
+        else:
             break
-        result = candidate
-    return result
+    return seo_title
+
+# ================= TRENDING WORDS =================
+def extract_trending_words(article_text, top_n=5):
+    words = re.findall(r'[\w\u0900-\u097F]+', article_text.lower())
+    stopwords = set([
+        "the","is","at","which","on","and","a","an","for","to","of","in","with",
+        "that","this","as","by","from","it","be","or","are","was","has","have",
+        "है","और","को","का","की","में","से","पर","कर","हो","इस"
+    ])
+    valid_words = [w for w in words if w not in stopwords and len(w)>2]
+    counter = Counter(valid_words)
+    return [w for w, c in counter.most_common(top_n)]
+
+def trending_words_analysis(article_text, trending_words):
+    results = []
+    text_lower = article_text.lower()
+    for word in trending_words:
+        count = text_lower.count(word.lower())
+        verdict = "✅ Good" if 1 <= count <= 3 else "❌ Check"
+        results.append([word, count, "Max 3 times", verdict])
+    return results
 
 # ================= EXCEL FORMAT =================
 def format_excel(df):
     output = BytesIO()
     df.to_excel(output, index=False)
     output.seek(0)
-
     wb = load_workbook(output)
     ws = wb.active
-
     header_fill = PatternFill("solid", fgColor="D9EAF7")
     bold = Font(bold=True)
     border = Border(
-        left=Side(style="thin"),
-        right=Side(style="thin"),
-        top=Side(style="thin"),
-        bottom=Side(style="thin"),
+        left=Side(style="thin"), right=Side(style="thin"),
+        top=Side(style="thin"), bottom=Side(style="thin")
     )
-
     for col in ws.columns:
         max_len = max(len(str(cell.value)) if cell.value else 0 for cell in col)
         ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 3, 50)
-
     for cell in ws[1]:
         cell.font = bold
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.border = border
-
     for row in ws.iter_rows(min_row=2):
         for cell in row:
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             cell.border = border
-
     ws.sheet_view.showGridLines = False
-
     final = BytesIO()
     wb.save(final)
     final.seek(0)
     return final
 
-# ================= H2 COUNT FIX =================
+# ================= H2 COUNT =================
 def get_h2_count_fixed(article):
     h2s = article.find_all("h2")
     real_h2 = []
@@ -148,16 +164,6 @@ def get_h2_count_fixed(article):
             continue
         real_h2.append(h2)
     return len(real_h2)
-
-# ================= TRENDING WORDS ANALYSIS =================
-def trending_words_analysis(article_text, trending_words):
-    results = []
-    text_lower = article_text.lower()
-    for word in trending_words:
-        count = text_lower.count(word.lower())
-        verdict = "✅ Good" if 1 <= count <= 3 else "❌ Check"
-        results.append([word, count, "Max 3 times", verdict])
-    return results
 
 # ================= ANALYSIS =================
 def analyze_url(url):
@@ -178,7 +184,7 @@ def analyze_url(url):
     h2_count = get_h2_count_fixed(article)
     internal, external = get_links(article, domain)
 
-    seo_title = generate_seo_title(title, max_len=100)
+    seo_title = generate_seo_title_from_content(title, article_text, max_len=100)
 
     data = [
         ["Title Character Count", title_len, "≤ 60", "❌" if title_len > 60 else "✅"],
@@ -191,16 +197,8 @@ def analyze_url(url):
         ["External Links", external, "0–2", "❌" if external > 2 else "✅"],
     ]
 
-    # Detect trending words automatically (top 5 frequent words excluding stopwords)
-    words = re.findall(r'\b\w+\b', article_text.lower())
-    stopwords = set([
-        "the","is","at","which","on","and","a","an","for","to","of","in","with",
-        "that","this","as","by","from","it","be","or","are","was","has","have"
-    ])
-    freq_words = [w for w in words if w not in stopwords and len(w)>3]
-    counter = Counter(freq_words)
-    top_trending = [w for w, c in counter.most_common(5)]
-    trending_data = trending_words_analysis(article_text, top_trending)
+    trending_words = extract_trending_words(article_text)
+    trending_data = trending_words_analysis(article_text, trending_words)
 
     return data, trending_data
 
