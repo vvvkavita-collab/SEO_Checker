@@ -88,7 +88,6 @@ def generate_seo_title(actual_title, content="", max_len=100):
             seen.add(w.lower())
             keywords.append(w)
     keywords = keywords[:6]
-    modifiers = ["Breaking News", "Update", "Explained"]
     suggested = f"{modifiers[0]}: {' '.join(keywords)}"
     def visible_len(s):
         return sum(1 for c in s if not unicodedata.category(c).startswith("C"))
@@ -205,6 +204,7 @@ if analyze:
             file_name=f"SEO_Audit_Report_{idx+1}.xlsx",
             key=f"download_{idx}"
         )
+
 
 
 
