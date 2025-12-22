@@ -34,7 +34,7 @@ def get_soup(url):
 def get_article(soup):
     return soup.find("article") or soup.find("div", class_=re.compile("content|story", re.I)) or soup
 
-# -------- ORIGINAL WORKING IMAGE LOGIC --------
+# -------- ORIGINAL IMAGE LOGIC --------
 def get_real_images(article):
     images = []
 
@@ -133,19 +133,27 @@ def format_excel(df):
     return final
 
 # ================= H2 COUNT FIX =================
-def get_h2_count(article):
+def get_h2_count_fixed(article):
     h2s = article.find_all("h2")
     real_h2 = []
 
-    for h2 in h2s:
+    for idx, h2 in enumerate(h2s):
         text = h2.get_text(strip=True)
-        # Ignore very short H2 (probably intro/meta)
+
+        # Ignore first H2 if it is very long (likely intro/lead)
+        if idx == 0 and len(text) > 100:
+            continue
+
+        # Ignore ads, related, subscribe, promo sections
+        if re.search(r"(advertisement|related|subscribe|promo|sponsored|news in short)", text, re.I):
+            continue
+
+        # Ignore very short H2 (labels)
         if len(text) < 20:
             continue
-        # Ignore ads, related, subscribe etc.
-        if re.search(r"(advertisement|related|subscribe|news in short|promo|sponsored)", text, re.I):
-            continue
+
         real_h2.append(h2)
+
     return len(real_h2)
 
 # ================= ANALYSIS =================
@@ -163,7 +171,7 @@ def analyze_url(url):
 
     img_count = len(get_real_images(article))
     h1_count = len(article.find_all("h1"))
-    h2_count = get_h2_count(article)
+    h2_count = get_h2_count_fixed(article)
     internal, external = get_links(article, domain)
 
     seo_title = generate_seo_title(title, paragraphs)
