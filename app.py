@@ -78,36 +78,40 @@ def get_links(article, domain):
     return internal, external
 
 # ================= SEO TITLE =================
-import re
-import unicodedata
-
 def generate_seo_title(actual_title, content="", max_len=60):
     """
     Generate SEO-friendly suggested title:
-    - Uses keywords from actual title + content
-    - Adds modifiers for SEO
+    - Unicode safe (Hindi + English)
+    - Adds SEO modifiers
     - Ensures length <= max_len
     """
     # Step 1: Normalize
     actual_title = actual_title.strip()
-    
-    # Step 2: Extract keywords (simple split, can improve with NLP)
-    words = re.findall(r'\w+', actual_title.lower())
-    keywords = list(dict.fromkeys(words))[:5]  # unique first 5 words
-    
-    # Step 3: Add SEO modifiers
-    modifiers = ["Latest", "Breaking News", "Update", "Explained"]
-    
+
+    # Step 2: Extract words (Unicode safe split)
+    words = actual_title.split()
+    # Remove duplicates, keep order
+    seen = set()
+    keywords = []
+    for w in words:
+        if w.lower() not in seen:
+            seen.add(w.lower())
+            keywords.append(w)
+    keywords = keywords[:6]  # first 5–6 words only
+
+    # Step 3: Add SEO modifiers (bilingual)
+    modifiers = ["ताज़ा खबर", "Breaking News", "Update", "Explained"]
+
     # Step 4: Build suggested title
-    suggested = " ".join(modifiers[:2]) + ": " + " ".join(keywords).title()
-    
-    # Step 5: Ensure length limit
+    suggested = f"{modifiers[0]}: {' '.join(keywords)}"
+
+    # Step 5: Length control
     def visible_len(s):
         return sum(1 for c in s if not unicodedata.category(c).startswith("C"))
-    
+
     if visible_len(suggested) > max_len:
         suggested = suggested[:max_len].rsplit(" ", 1)[0]
-    
+
     return suggested
 
 # ================= EXCEL FORMAT =================
@@ -219,4 +223,5 @@ if analyze:
             file_name=f"SEO_Audit_Report_{idx+1}.xlsx",
             key=f"download_{idx}"
         )
+
 
