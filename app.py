@@ -78,22 +78,29 @@ def get_links(article, domain):
     return internal, external
 
 # ================= SEO TITLE =================
-def generate_seo_title(actual_title, content="", max_len=100):
+def generate_seo_title(actual_title, content="", max_len=70):
     actual_title = actual_title.strip()
     words = actual_title.split()
+
+    # Remove duplicates, keep order
     seen = set()
     keywords = []
     for w in words:
         if w.lower() not in seen:
             seen.add(w.lower())
             keywords.append(w)
-    keywords = keywords[:6]
-    suggested = f"{modifiers[0]}: {' '.join(keywords)}"
-    def visible_len(s):
-        return sum(1 for c in s if not unicodedata.category(c).startswith("C"))
-    if visible_len(suggested) > max_len:
-        suggested = suggested[:max_len].rsplit(" ", 1)[0]
-    return suggested
+
+    modifiers = ["ताज़ा खबर", "Breaking News", "Update"]
+    base = f"{modifiers[0]}: "
+    result = base
+    for w in keywords:
+        candidate = result + w + " "
+        visible = sum(1 for c in candidate if not unicodedata.category(c).startswith("C"))
+        if visible > max_len:
+            break
+        result = candidate
+
+    return result.strip()
 
 # ================= EXCEL FORMAT =================
 def format_excel(df):
@@ -204,6 +211,7 @@ if analyze:
             file_name=f"SEO_Audit_Report_{idx+1}.xlsx",
             key=f"download_{idx}"
         )
+
 
 
 
