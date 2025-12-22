@@ -8,11 +8,10 @@ import re
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-import unicodedata
 
 # ================= PAGE CONFIG =================
-st.set_page_config(page_title="Advanced SEO Auditor – Director Edition", layout="wide")
-st.title("🧠 Advanced SEO Auditor – News & Blog")
+st.set_page_config(page_title="AI SEO Auditor (API) – Director Edition", layout="wide")
+st.title("🧠 AI SEO Auditor – News & Blog (HuggingFace API)")
 
 # ================= SIDEBAR =================
 st.sidebar.header("SEO Mode")
@@ -24,6 +23,9 @@ analyze = st.button("Analyze")
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
+HF_API_URL = "https://api-inference.huggingface.co/models/google/mt5-small"
+HF_API_TOKEN = "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"  # Replace with your HuggingFace API token
+
 # ================= HELPERS =================
 def get_soup(url):
     r = requests.get(url, headers=HEADERS, timeout=20)
@@ -33,7 +35,6 @@ def get_soup(url):
 def get_article(soup):
     return soup.find("article") or soup.find("div", class_=re.compile("content|story", re.I)) or soup
 
-# -------- IMAGE LOGIC --------
 def get_real_images(article):
     images = []
     for fig in article.find_all("figure"):
@@ -50,7 +51,6 @@ def get_real_images(article):
                 images.append(img)
     return images[:1]
 
-# -------- PARAGRAPHS --------
 def get_real_paragraphs(article):
     paras = []
     for p in article.find_all("p"):
@@ -62,7 +62,6 @@ def get_real_paragraphs(article):
         paras.append(text)
     return paras
 
-# -------- LINKS --------
 def get_links(article, domain):
     internal = external = 0
     for p in article.find_all("p"):
@@ -77,64 +76,6 @@ def get_links(article, domain):
                 internal += 1
     return internal, external
 
-# ================= SEO TITLE =================
-def generate_seo_title(title, max_len=60):
-    """Unicode-safe truncate of title without cutting last word"""
-    words = title.split()
-    result = ""
-
-    def visible_len(s):
-        # Count visible characters (ignore control chars)
-        return sum(1 for c in s if not unicodedata.category(c).startswith("C"))
-
-    for w in words:
-        candidate = (result + " " + w).strip() if result else w
-        if visible_len(candidate) > max_len:
-            break
-        result = candidate
-    return result
-
-# ================= EXCEL FORMAT =================
-def format_excel(df):
-    output = BytesIO()
-    df.to_excel(output, index=False)
-    output.seek(0)
-
-    wb = load_workbook(output)
-    ws = wb.active
-
-    header_fill = PatternFill("solid", fgColor="D9EAF7")
-    bold = Font(bold=True)
-    border = Border(
-        left=Side(style="thin"),
-        right=Side(style="thin"),
-        top=Side(style="thin"),
-        bottom=Side(style="thin"),
-    )
-
-    for col in ws.columns:
-        max_len = max(len(str(cell.value)) if cell.value else 0 for cell in col)
-        ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 3, 50)
-
-    for cell in ws[1]:
-        cell.font = bold
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        cell.border = border
-
-    for row in ws.iter_rows(min_row=2):
-        for cell in row:
-            cell.alignment = Alignment(vertical="top", wrap_text=True)
-            cell.border = border
-
-    ws.sheet_view.showGridLines = False
-
-    final = BytesIO()
-    wb.save(final)
-    final.seek(0)
-    return final
-
-# ================= H2 COUNT FIX =================
 def get_h2_count_fixed(article):
     h2s = article.find_all("h2")
     real_h2 = []
@@ -149,7 +90,52 @@ def get_h2_count_fixed(article):
         real_h2.append(h2)
     return len(real_h2)
 
-# ================= ANALYSIS =================
+def generate_seo_title_api(paragraphs):
+    text = " ".join(paragraphs)
+    headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
+    payload = {"inputs": text, "parameters": {"max_length": 20, "min_length": 10}}
+    try:
+        r = requests.post(HF_API_URL, headers=headers, json=payload, timeout=30)
+        r.raise_for_status()
+        result = r.json()
+        if isinstance(result, list) and 'summary_text' in result[0]:
+            return result[0]['summary_text']
+        elif isinstance(result, list) and 'generated_text' in result[0]:
+            return result[0]['generated_text']
+        else:
+            return "AI SEO title generation failed"
+    except Exception as e:
+        return "AI SEO title generation failed"
+
+def format_excel(df):
+    output = BytesIO()
+    df.to_excel(output, index=False)
+    output.seek(0)
+    wb = load_workbook(output)
+    ws = wb.active
+
+    header_fill = PatternFill("solid", fgColor="D9EAF7")
+    bold = Font(bold=True)
+    border = Border(left=Side(style="thin"), right=Side(style="thin"),
+                    top=Side(style="thin"), bottom=Side(style="thin"))
+    for col in ws.columns:
+        max_len = max(len(str(cell.value)) if cell.value else 0 for cell in col)
+        ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len+3,50)
+    for cell in ws[1]:
+        cell.font = bold
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = border
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            cell.border = border
+    ws.sheet_view.showGridLines = False
+    final = BytesIO()
+    wb.save(final)
+    final.seek(0)
+    return final
+
 def analyze_url(url):
     soup = get_soup(url)
     article = get_article(soup)
@@ -167,11 +153,11 @@ def analyze_url(url):
     h2_count = get_h2_count_fixed(article)
     internal, external = get_links(article, domain)
 
-    seo_title = generate_seo_title(title)
+    seo_title = generate_seo_title_api(paragraphs)
 
     return [
         ["Title Character Count", title_len, "≤ 60", "❌" if title_len > 60 else "✅"],
-        ["Suggested SEO Title", title, seo_title, "—"],
+        ["AI Suggested SEO Title", title, seo_title, "—"],
         ["Word Count", word_count, "250+", "✅" if word_count >= 250 else "❌"],
         ["News Image Count", img_count, "1+", "✅" if img_count >= 1 else "❌"],
         ["H1 Count", h1_count, "1", "✅" if h1_count == 1 else "❌"],
