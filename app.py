@@ -117,7 +117,7 @@ if analyze and url:
         h1_tag = soup.find("h1")
         title = h1_tag.get_text(strip=True) if h1_tag else soup.title.string.strip()
         title_len = len(title)
-        short_title = shorten_title(title)
+        seo_title = seo_optimized_title(title)
 
         # -------- META --------
         meta_tag = soup.find("meta", attrs={"name": "description"}) or soup.find(
@@ -170,4 +170,5 @@ if analyze and url:
     except Exception as e:
         st.error("Error occurred while analyzing the page")
         st.exception(e)
+
 
