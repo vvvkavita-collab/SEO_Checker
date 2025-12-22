@@ -144,7 +144,7 @@ if analyze and url:
         # ================= REPORT =================
         report = [
             ["Title Character Count", title_len, "≤ 60", "✅" if title_len <= 60 else "❌"],
-            ["Suggested SEO Title", short_title, "Auto Optimized", "—"],
+            ["Suggested SEO Title", seo_title, "Full SEO Title", "—"],
             ["Meta Description Characters", meta_chars, "70–160", "✅" if 70 <= meta_chars <= 160 else "❌"],
             ["H1 Count", h1_count, "1", "✅" if h1_count == 1 else "❌"],
             ["H2 Count", h2_count, "2+", "✅" if h2_count >= 2 else "❌"],
@@ -170,5 +170,6 @@ if analyze and url:
     except Exception as e:
         st.error("Error occurred while analyzing the page")
         st.exception(e)
+
 
 
