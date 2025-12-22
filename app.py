@@ -16,10 +16,8 @@ st.title("🧠 Advanced SEO Auditor – News & Blog")
 # ================= SIDEBAR =================
 st.sidebar.header("SEO Mode")
 content_type = st.sidebar.radio("Select Content Type", ["News Article", "Blog / Evergreen"])
-
 st.sidebar.markdown("---")
 bulk_file = st.sidebar.file_uploader("Upload Bulk URLs (TXT / CSV)", type=["txt", "csv"])
-
 url = st.text_input("Paste URL")
 analyze = st.button("Analyze")
 
@@ -81,7 +79,8 @@ def get_links(article, domain):
 # ================= SEO TITLE =================
 def generate_seo_title(title, max_len=60):
     """
-    Truncate title word-by-word to max_len characters without cutting last word awkwardly.
+    Truncate title word-by-word to max_len characters without cutting last word.
+    Works properly for Hindi and multi-byte characters.
     """
     if len(title) <= max_len:
         return title
@@ -89,8 +88,8 @@ def generate_seo_title(title, max_len=60):
     words = title.split()
     new_title = ""
     for w in words:
-        # next word add करने पर भी limit exceed नहीं होना चाहिए
-        if len(new_title) + len(w) + (1 if new_title else 0) > max_len:
+        next_len = len(new_title) + (1 if new_title else 0) + len(w)
+        if next_len > max_len:
             break
         new_title += (" " if new_title else "") + w
     return new_title
@@ -187,7 +186,6 @@ def analyze_url(url):
 # ================= RUN =================
 if analyze:
     urls = []
-
     if bulk_file:
         lines = bulk_file.read().decode("utf-8").splitlines()
         urls = [l.strip() for l in lines if l.strip()]
