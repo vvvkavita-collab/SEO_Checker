@@ -78,108 +78,35 @@ def get_links(article, domain):
     return internal, external
 
 # ================= SEO TITLE =================
-def generate_seo_title(actual_title, content="", max_len=68):
-    import re
-    import unicodedata
+from collections import Counter
+import re, unicodedata
 
-    # 1) Normalize
-    t = (actual_title or "").strip()
-    t = re.sub(r"[\"\'“”‘’]", "", t)
-    t = re.sub(r"\s+", " ", t)
+def generate_seo_title(actual_title, content="", max_len=60):
+    # Normalize
+    text = (actual_title + " " + content).strip()
+    text = re.sub(r"[\"\'“”‘’]", "", text)
 
-    # 2) Clause split (Hindi/English separators)
-    clauses = re.split(r"[,:।!?\-–—]|(?<=\))", t)
-    clauses = [c.strip() for c in clauses if c and len(c.strip()) > 2]
+    # Tokenize (Unicode safe)
+    words = re.findall(r'\w+', text, flags=re.UNICODE)
 
-    # 3) Remove fillers but keep impact words
-    filler = [
-        "ने कहा", "बताया", "बताया कि", "के बयान पर", "पर बयान", "पर प्रतिक्रिया",
-        "उद्घाटन समारोह", "खबर", "समाचार", "रिपोर्ट", "विवाद", "चर्चा",
-        "पोल खोल", "इशारा", "फिर", "एक दिन की", "डेटा से", "समाधान"
-    ]
-    def clean_phrase(p):
-        p = re.sub(r"\b(" + "|".join(map(re.escape, filler)) + r")\b", "", p)
-        p = re.sub(r"\s+", " ", p).strip()
-        return p
+    # Remove very short/common words
+    stopwords = {"में","पर","और","का","की","से","था","थे","है","हैं","ने","को","भी","के"}
+    keywords = [w for w in words if len(w) > 2 and w.lower() not in stopwords]
 
-    clauses = [clean_phrase(c) for c in clauses]
-    clauses = [c for c in clauses if c]  # drop empties
+    # Frequency count
+    freq = Counter(keywords)
+    top = [w for w,_ in freq.most_common(6)]
 
-    # 4) Compress common Hindi patterns
-    def compress_hindi(s):
-        # "से ज्यादा/अधिक" → "+"
-        s = re.sub(r"(\d+)\s*लाख\s*से\s*ज्यादा", r"\1+ लाख", s)
-        s = re.sub(r"(\d+)\s*लाख\s*अधिक", r"\1+ लाख", s)
+    # Build suggested title
+    suggested = " ".join(top)
 
-        # "ने X पर बैन लगाया था/लगाया" → "X पर बैन"
-        s = re.sub(r"ने\s+([^,]+?)\s+पर\s+बैन\s+लगाया(?:\s+था)?", r"\1 पर बैन", s)
+    # Length control
+    def visible_len(s):
+        return sum(1 for c in s if not unicodedata.category(c).startswith("C"))
+    if visible_len(suggested) > max_len:
+        suggested = suggested[:max_len].rsplit(" ",1)[0]
 
-        # "मचा घमासान/बवाल" → keep single impact word
-        s = re.sub(r"मचा\s+(घमासान|बवाल)", r"\1", s)
-
-        # Trim multiple spaces
-        s = re.sub(r"\s+", " ", s).strip()
-        return s
-
-    clauses = [compress_hindi(c) for c in clauses]
-
-    # 5) Rank clauses (keep keyword‑rich first)
-    impact_words = {"पलटवार","घमासान","बवाल","भर्ती","नौकरियां","हाइलाइट्स","अपडेट","आवेदन","विवाद","बैन"}
-    def score(c):
-        sc = 0
-        # numbers, entities, impact boosts
-        if re.search(r"\d", c): sc += 2
-        sc += sum(2 for w in impact_words if w in c)
-        # known topical hints
-        topical = ["RSS","सरदार पटेल","कांग्रेस","मोहन भागवत","Bihar","Sarkari","Naukri","भर्ती","परकोटा","स्मार्ट"]
-        sc += sum(1 for w in topical if w in c)
-        # shorter but meaningful get small boost
-        sc += max(0, 20 - len(c.split())) * 0.1
-        return sc
-
-    clauses = sorted(clauses, key=score, reverse=True)
-
-    # 6) Build with templates ensuring difference from actual
-    modifiers = ["ताज़ा खबर", "Breaking", "Explained"]
-    base = modifiers[0] + ": "
-
-    # Compose: primary + optional impact/secondary
-    title = base
-    for c in clauses:
-        candidate = (title + c).strip()
-        vis_len = sum(1 for ch in candidate if not unicodedata.category(ch).startswith("C"))
-        if vis_len <= max_len:
-            title = candidate
-            # Try appending a second clause if space allows
-            for d in clauses:
-                if d == c: continue
-                candidate2 = (title + ", " + d).strip()
-                vis_len2 = sum(1 for ch in candidate2 if not unicodedata.category(ch).startswith("C"))
-                if vis_len2 <= max_len:
-                    title = candidate2
-            break
-
-    # 7) If still too similar to actual start, force alternative phrasing
-    def starts_similar(a, b):
-        a0 = re.sub(r"\W+", " ", a).strip().lower()
-        b0 = re.sub(r"\W+", " ", b).strip().lower()
-        return a0.startswith(b0[:max(10, len(b0)//3)])
-
-    if starts_similar(title.replace(base, ""), t):
-        # Switch template: Impact first, then subject
-        if len(clauses) >= 2:
-            alt = f"{base}{clauses[1]}, {clauses[0]}"
-        else:
-            alt = f"{modifiers[1]}: {clauses[0]}"
-        # length guard
-        vis_len = sum(1 for ch in alt if not unicodedata.category(ch).startswith("C"))
-        if vis_len <= max_len:
-            title = alt
-
-    # 8) Final tidy: strip trailing comma
-    title = title.rstrip(", ")
-
-    return title
+    return suggested
 
 # ================= EXCEL FORMAT =================
 def format_excel(df):
@@ -290,6 +217,7 @@ if analyze:
             file_name=f"SEO_Audit_Report_{idx+1}.xlsx",
             key=f"download_{idx}"
         )
+
 
 
 
