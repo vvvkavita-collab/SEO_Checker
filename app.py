@@ -199,8 +199,10 @@ def analyze_url(url):
 
     found_stop = [w for w in STOP_WORDS if f" {w} " in title.lower()]
     url_clean_flag = url.rstrip("/") == clean_url.rstrip("/")
+
     score = calculate_score(visible_len(title), url_clean_flag, bool(found_stop))
 
+    # ---- SEO Audit Table ----
     audit_df = pd.DataFrame([
         ["Title Character Count", visible_len(title), "≤ 60", "❌" if visible_len(title) > 60 else "✅"],
         ["Suggested SEO Title", title, seo_title, "—"],
@@ -215,25 +217,20 @@ def analyze_url(url):
         ["Title + URL SEO Score", f"{score} / 100", "≥ 80", "⚠️" if score < 80 else "✅"],
     ], columns=["Metric", "Actual", "Ideal", "Verdict"])
 
+    # ---- Grading / Score Table ----
     penalties = []
+    penalties.append(["Base Score", 100])
+    if visible_len(title) > 60:
+        penalties.append(["Title > 60 characters", -20])
+    if not url_clean_flag:
+        penalties.append(["URL not clean", -30])
+    if found_stop:
+        penalties.append(["Unnecessary words in title", -10])
+    penalties.append(["Final Score", score])
 
-penalties.append(["Base Score", 100])
+    grading_df = pd.DataFrame(penalties, columns=["Scoring Rule", "Value"])
 
-if visible_len(title) > 60:
-    penalties.append(["Title > 60 characters", -20])
-
-if not url_clean_flag:
-    penalties.append(["URL not clean", -30])
-
-if found_stop:
-    penalties.append(["Unnecessary words in title", -10])
-
-penalties.append(["Final Score", score])
-
-grading_df = pd.DataFrame(
-    penalties,
-    columns=["Scoring Rule", "Value"]
-)
+    return audit_df, grading_df
 
 # ================= RUN =================
 if analyze:
@@ -269,5 +266,3 @@ if analyze:
             data=excel,
             file_name="SEO_Audit_Final.xlsx"
         )
-
-
