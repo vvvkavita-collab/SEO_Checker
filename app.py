@@ -8,6 +8,7 @@ import re
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+import unicodedata
 
 # ================= PAGE CONFIG =================
 st.set_page_config(page_title="Advanced SEO Auditor – Director Edition", layout="wide")
@@ -79,19 +80,22 @@ def get_links(article, domain):
 # ================= SEO TITLE =================
 def generate_seo_title(title, max_len=60):
     """
-    Truncate title word-by-word to max_len characters without cutting last word.
-    Works properly for Hindi and multi-byte characters.
+    Truncate title to max_len visible characters without cutting last word.
+    Works correctly for Hindi / multi-byte characters.
     """
-    if len(title) <= max_len:
+    def visible_len(s):
+        return sum(1 for c in s if not unicodedata.category(c).startswith("C"))
+
+    if visible_len(title) <= max_len:
         return title
 
     words = title.split()
     new_title = ""
     for w in words:
-        next_len = len(new_title) + (1 if new_title else 0) + len(w)
-        if next_len > max_len:
+        next_title = (new_title + " " + w).strip() if new_title else w
+        if visible_len(next_title) > max_len:
             break
-        new_title += (" " if new_title else "") + w
+        new_title = next_title
     return new_title
 
 # ================= EXCEL FORMAT =================
@@ -140,13 +144,10 @@ def get_h2_count_fixed(article):
     real_h2 = []
     for idx, h2 in enumerate(h2s):
         text = h2.get_text(strip=True)
-        # Ignore first H2 if very long (intro/lead)
         if idx == 0 and len(text) > 100:
             continue
-        # Ignore ads / promo / related sections
         if re.search(r"(advertisement|related|subscribe|promo|sponsored|news in short)", text, re.I):
             continue
-        # Ignore very short H2 labels
         if len(text) < 20:
             continue
         real_h2.append(h2)
@@ -204,5 +205,5 @@ if analyze:
             label="⬇️ Download Director Ready SEO Report",
             data=excel,
             file_name=f"SEO_Audit_Report_{idx+1}.xlsx",
-            key=f"download_{idx}"   # Unique key
+            key=f"download_{idx}"
         )
