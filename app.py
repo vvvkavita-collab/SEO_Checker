@@ -10,12 +10,12 @@ from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-# ================= PAGE =================
+# ================= CONFIG =================
 st.set_page_config("Advanced SEO Auditor – Director Edition", layout="wide")
-st.title("🧠 Advanced SEO Auditor – News & Blog (Director Edition)")
+st.title("🧠 Advanced SEO Auditor – News & Blog")
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
-STOP_WORDS = {"and", "or", "the", "is", "was", "of", "to", "for", "with"}
+STOP_WORDS = {"and","or","the","is","was","of","to","for","with"}
 
 # ================= INPUT =================
 st.sidebar.header("Input")
@@ -37,17 +37,18 @@ def generate_seo_title(title, max_len=60):
         return title
     out = ""
     for w in title.split():
-        tmp = (out + " " + w).strip()
-        if visible_len(tmp) > max_len:
+        temp = (out + " " + w).strip()
+        if visible_len(temp) > max_len:
             break
-        out = tmp
+        out = temp
     return out
 
 def clean_slug(slug):
     words = [w for w in slug.split("-") if w and w not in STOP_WORDS]
     return "-".join(words[:10])
 
-def title_url_seo_score(title, url):
+# ================= SEO SCORE =================
+def calculate_seo_score(title, url):
     score = 0
     parsed = urlparse(url)
     slug = parsed.path.strip("/").lower()
@@ -66,96 +67,129 @@ def title_url_seo_score(title, url):
 
     return score
 
-# ================= URL ANALYSIS =================
+# ================= ARTICLE LOGIC =================
+def get_article(soup):
+    return soup.find("article") or soup
+
+def get_real_paragraphs(article):
+    paras = []
+    for p in article.find_all("p"):
+        t = p.get_text(" ", strip=True)
+        if len(t) < 80:
+            continue
+        if re.search(r"(photo|agency|advertisement|read more)", t.lower()):
+            continue
+        paras.append(t)
+    return paras
+
+def get_real_images(article):
+    imgs = []
+    for img in article.find_all("img"):
+        src = img.get("src","")
+        if src and not any(x in src.lower() for x in ["logo","icon","sprite","ads"]):
+            imgs.append(img)
+    return imgs[:1]
+
+def get_links(article, domain):
+    internal = external = 0
+    for a in article.find_all("a", href=True):
+        if domain in a["href"]:
+            internal += 1
+        else:
+            external += 1
+    return internal, external
+
+# ================= MAIN ANALYSIS =================
 def analyze_url(url):
     soup = get_soup(url)
+    article = get_article(soup)
     parsed = urlparse(url)
 
     h1 = soup.find("h1")
     title = h1.get_text(strip=True) if h1 else "No H1 Found"
     seo_title = generate_seo_title(title)
 
+    paras = get_real_paragraphs(article)
+    word_count = sum(len(p.split()) for p in paras)
+
+    img_count = len(get_real_images(article))
+    h1_count = len(article.find_all("h1"))
+    h2_count = len(article.find_all("h2"))
+    internal, external = get_links(article, parsed.netloc)
+
     slug = parsed.path.strip("/").lower()
     words = slug.split("-") if slug else []
     found_stop = sorted(set(w for w in words if w in STOP_WORDS))
     clean = clean_slug(slug)
-    suggested_url = f"{parsed.scheme}://{parsed.netloc}/{clean}" if clean else url
+    suggested_url = f"{parsed.scheme}://{parsed.netloc}/{clean}"
 
-    score = title_url_seo_score(seo_title, url)
+    score = calculate_seo_score(seo_title, url)
 
-    return [
-        ["URL", url, "", ""],
-        ["Title", title, "≤ 60 chars", "❌" if visible_len(title) > 60 else "✅"],
-        ["Suggested SEO Title", seo_title, "", ""],
+    rows = [
+        ["Title Character Count", visible_len(title), "≤ 60", "❌" if visible_len(title) > 60 else "✅"],
+        ["Suggested SEO Title", title, seo_title, "—"],
+        ["Word Count", word_count, "250+", "❌" if word_count < 250 else "✅"],
+        ["News Image Count", img_count, "1+", "❌" if img_count < 1 else "✅"],
+        ["H1 Count", h1_count, "1", "❌" if h1_count != 1 else "✅"],
+        ["H2 Count", h2_count, "2+", "❌" if h2_count < 2 else "✅"],
+        ["Internal Links", internal, "2–10", "❌" if internal < 2 else "✅"],
+        ["External Links", external, "0–2", "❌" if external > 2 else "✅"],
+
         ["Unnecessary Words", ", ".join(found_stop) if found_stop else "None", "No", "❌" if found_stop else "✅"],
-        ["Suggested Clean SEO URL", suggested_url, "", ""],
-        ["Title + URL SEO Score", f"{score} / 100", "≥ 80", "✅" if score >= 80 else "⚠️"],
+        ["Suggested Clean SEO URL", suggested_url, "Clean URL", "—"],
+        ["Title + URL SEO Score", f"{score} / 100", "≥ 80", "⚠️" if score < 80 else "✅"],
     ]
 
-# ================= EXCEL FORMAT =================
-def format_excel(df):
-    output = BytesIO()
-    df.to_excel(output, index=False)
-    output.seek(0)
+    return rows
 
-    wb = load_workbook(output)
-    ws = wb.active
+# ================= SCORE TABLE =================
+def seo_score_table():
+    return pd.DataFrame([
+        ["Title Length", "≤ 60 chars", 30],
+        ["URL Length", "≤ 80 chars", 25],
+        ["No Stop Words", "Clean slug", 20],
+        ["Clear Topic", "≤ 10 words", 15],
+        ["Lowercase + Hyphen", "Yes", 10],
+        ["TOTAL", "", 100],
+    ], columns=["Factor", "Condition", "Score"])
 
-    header = PatternFill("solid", fgColor="D9EAF7")
-    bold = Font(bold=True)
-    border = Border(left=Side(style="thin"), right=Side(style="thin"),
-                    top=Side(style="thin"), bottom=Side(style="thin"))
-
-    for col in ws.columns:
-        width = max(len(str(c.value)) if c.value else 0 for c in col)
-        ws.column_dimensions[get_column_letter(col[0].column)].width = min(width + 3, 50)
-
-    for cell in ws[1]:
-        cell.font = bold
-        cell.fill = header
-        cell.alignment = Alignment(horizontal="center")
-        cell.border = border
-
-    for row in ws.iter_rows(min_row=2):
-        for cell in row:
-            cell.alignment = Alignment(wrap_text=True, vertical="top")
-            cell.border = border
-
-    ws.sheet_view.showGridLines = False
-    final = BytesIO()
-    wb.save(final)
-    final.seek(0)
-    return final
+# ================= EXCEL =================
+def format_excel(dfs):
+    out = BytesIO()
+    with pd.ExcelWriter(out, engine="openpyxl") as writer:
+        for name, df in dfs.items():
+            df.to_excel(writer, sheet_name=name, index=False)
+    out.seek(0)
+    return out
 
 # ================= RUN =================
 if analyze:
     urls = []
-
     if bulk_file:
-        urls = bulk_file.read().decode().splitlines()
-        urls = [u.strip() for u in urls if u.strip()]
+        urls = [u.strip() for u in bulk_file.read().decode().splitlines() if u.strip()]
     elif single_url:
         urls = [single_url]
 
     all_rows = []
-
     for u in urls:
-        rows = analyze_url(u)
-        for r in rows:
-            all_rows.append(r)
+        all_rows.extend(analyze_url(u))
 
-    df = pd.DataFrame(all_rows, columns=["Metric", "Actual", "Ideal", "Verdict"])
-    st.dataframe(df, use_container_width=True)
+    df_main = pd.DataFrame(all_rows, columns=["Metric","Actual","Ideal","Verdict"])
+    df_score = seo_score_table()
 
-    # Auto-copy button
-    clean_urls = df[df["Metric"] == "Suggested Clean SEO URL"]["Actual"].tolist()
-    if clean_urls:
-        st.code(clean_urls[0], language="text")
-        st.caption("⬆️ Suggested SEO URL (Auto-copy supported)")
+    st.subheader("📊 SEO Audit Report")
+    st.dataframe(df_main, use_container_width=True)
 
-    excel = format_excel(df)
+    st.subheader("🧮 SEO Score Calculation Logic")
+    st.dataframe(df_score, use_container_width=True)
+
+    excel = format_excel({
+        "SEO Audit Report": df_main,
+        "SEO Score Logic": df_score
+    })
+
     st.download_button(
-        "⬇️ Download Combined SEO Report (All URLs)",
+        "⬇️ Download Combined SEO Excel",
         excel,
-        "Combined_SEO_Audit_Report.xlsx"
+        "Final_SEO_Audit_Report.xlsx"
     )
