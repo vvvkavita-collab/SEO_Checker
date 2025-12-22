@@ -99,29 +99,57 @@ def analyze_seo_url_rules(url):
     parsed = urlparse(url)
     slug = parsed.path.strip("/").lower()
     words = slug.split("-") if slug else []
+
     stop_words = {"and", "or", "the", "is", "was", "of", "to", "for", "with"}
+
+    found_stop_words = sorted(set(w for w in words if w in stop_words))
 
     rules = []
 
-    rules.append(["URL Lowercase", "Yes" if url == url.lower() else "No", "Yes", "✅" if url == url.lower() else "❌"])
-    rules.append(["Hyphens Used (No Underscore)", "Yes" if "_" not in url else "No", "Yes", "✅" if "_" not in url else "❌"])
+    rules.append([
+        "URL Lowercase",
+        "Yes" if url == url.lower() else "No",
+        "Yes",
+        "✅" if url == url.lower() else "❌"
+    ])
+
+    rules.append([
+        "Hyphens Used (No Underscore)",
+        "Yes" if "_" not in url else "No",
+        "Yes",
+        "✅" if "_" not in url else "❌"
+    ])
+
     rules.append([
         "No Special Characters",
         "Clean" if not re.search(r"[^a-z0-9\-\/:.]", url.lower()) else "Special Chars",
         "Clean",
         "✅" if not re.search(r"[^a-z0-9\-\/:.]", url.lower()) else "❌"
     ])
-    rules.append(["URL Length", len(url), "≤ 80 chars", "✅" if len(url) <= 80 else "❌"])
-    rules.append(["One Clear Topic (Slug Words)", len(words), "≤ 10 words", "✅" if len(words) <= 10 else "⚠️"])
+
+    rules.append([
+        "URL Length",
+        len(url),
+        "≤ 80 chars",
+        "✅" if len(url) <= 80 else "❌"
+    ])
+
+    rules.append([
+        "One Clear Topic (Slug Words)",
+        len(words),
+        "≤ 10 words",
+        "✅" if len(words) <= 10 else "⚠️"
+    ])
+
+    # ⭐ UPDATED PART
     rules.append([
         "Unnecessary Words",
-        "No" if not any(w in stop_words for w in words) else "Yes",
+        ", ".join(found_stop_words) if found_stop_words else "None",
         "No",
-        "✅" if not any(w in stop_words for w in words) else "❌"
+        "❌" if found_stop_words else "✅"
     ])
 
     return rules
-
 # ================= H2 COUNT FIX =================
 def get_h2_count_fixed(article):
     h2s = article.find_all("h2")
@@ -228,3 +256,4 @@ if analyze:
             f"SEO_Audit_Report_{idx+1}.xlsx",
             key=f"download_{idx}"
         )
+
