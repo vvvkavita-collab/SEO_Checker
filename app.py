@@ -79,24 +79,20 @@ def get_links(article, domain):
 
 # ================= SEO TITLE =================
 def generate_seo_title(title, max_len=60):
-    """
-    Truncate title to max_len visible characters without cutting last word.
-    Works correctly for Hindi / multi-byte characters.
-    """
+    """Unicode-safe truncate of title without cutting last word"""
+    words = title.split()
+    result = ""
+
     def visible_len(s):
+        # Count visible characters (ignore control chars)
         return sum(1 for c in s if not unicodedata.category(c).startswith("C"))
 
-    if visible_len(title) <= max_len:
-        return title
-
-    words = title.split()
-    new_title = ""
     for w in words:
-        next_title = (new_title + " " + w).strip() if new_title else w
-        if visible_len(next_title) > max_len:
+        candidate = (result + " " + w).strip() if result else w
+        if visible_len(candidate) > max_len:
             break
-        new_title = next_title
-    return new_title
+        result = candidate
+    return result
 
 # ================= EXCEL FORMAT =================
 def format_excel(df):
