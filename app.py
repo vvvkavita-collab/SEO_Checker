@@ -68,38 +68,38 @@ def get_links(article, domain):
 # ================= SEO TITLE (FIXED) =================
 def generate_seo_title(original_title, article_text, max_len=100):
     """
-    Generates NEW SEO title (not repeat)
-    Google Discover friendly
+    Generates a NEW Google Discover friendly title
+    (Does NOT repeat original title)
     """
-    stopwords = set([
-        "है","और","को","का","की","में","से","पर","कर","हो","इस",
-        "the","is","in","on","at","and","of","to","for","with"
-    ])
 
+    stopwords = {
+        "है","और","को","का","की","में","से","पर","कर","हो","इस","भी","लिए",
+        "the","is","in","on","at","and","of","to","for","with","from"
+    }
+
+    # Unicode-safe Hindi + English words
     words = re.findall(r'[\u0900-\u097Fa-zA-Z]+', article_text.lower())
     words = [w for w in words if w not in stopwords and len(w) > 3]
 
     freq = Counter(words)
-    top = [w for w, _ in freq.most_common(6)]
 
-    # Clean original title (remove repetition words)
-    base = original_title.split(":")[0].strip()
+    # Remove words already present in original title
+    original_words = set(re.findall(r'[\u0900-\u097Fa-zA-Z]+', original_title.lower()))
+    keywords = [w for w, _ in freq.most_common(10) if w not in original_words]
 
-    seo_parts = top[:3]
-    seo_title = f"{base}: {' '.join(seo_parts)}"
+    if len(keywords) < 3:
+        return original_title[:max_len]
 
-    # Discover boost
+    # Discover-style construction
+    seo_title = f"{keywords[0].title()} से जुड़ी बड़ी खबर, {keywords[1]} और {keywords[2]} पर अपडेट"
+
+    # Location boost
     if "बिहार" in article_text:
-        seo_title += " | Bihar Update"
+        seo_title += " | Bihar News"
+    elif "राजस्थान" in article_text:
+        seo_title += " | Rajasthan News"
 
     return seo_title[:max_len]
-
-# ================= H2 FIX =================
-def get_h2_count(article):
-    return len([
-        h2 for h2 in article.find_all("h2")
-        if len(h2.get_text(strip=True)) > 20
-    ])
 
 # ================= EXCEL FORMAT =================
 def format_excel(df):
@@ -185,3 +185,4 @@ if analyze:
             file_name=f"SEO_Report_{idx+1}.xlsx",
             key=f"dl_{idx}"
         )
+
