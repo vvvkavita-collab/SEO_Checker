@@ -34,7 +34,7 @@ def get_soup(url):
 def get_article(soup):
     return soup.find("article") or soup.find("div", class_=re.compile("content|story", re.I)) or soup
 
-# -------- ORIGINAL IMAGE LOGIC --------
+# -------- IMAGE LOGIC --------
 def get_real_images(article):
     images = []
 
@@ -197,16 +197,17 @@ if analyze:
     elif url:
         urls = [url]
 
-    for u in urls:
+    for idx, u in enumerate(urls):
         data = analyze_url(u)
         df = pd.DataFrame(data, columns=["Metric", "Actual", "Ideal", "Verdict"])
 
-        st.subheader("📊 SEO Audit Report")
+        st.subheader(f"📊 SEO Audit Report – URL {idx+1}")
         st.dataframe(df, use_container_width=True)
 
         excel = format_excel(df)
         st.download_button(
-            "⬇️ Download Director Ready SEO Report",
-            excel,
-            "SEO_Audit_Report.xlsx"
+            label="⬇️ Download Director Ready SEO Report",
+            data=excel,
+            file_name=f"SEO_Audit_Report_{idx+1}.xlsx",
+            key=f"download_{idx}"   # Unique key to prevent StreamlitDuplicateElementId
         )
