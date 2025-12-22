@@ -3,9 +3,8 @@ pandas
 requests
 beautifulsoup4
 openpyxl
-spacy
-transformers
-torch
+
+
 
 
 
