@@ -78,7 +78,7 @@ def get_links(article, domain):
     return internal, external
 
 # ================= SEO TITLE =================
-def generate_seo_title(actual_title, content="", max_len=60):
+def generate_seo_title(actual_title, content="", max_len=100):
     actual_title = actual_title.strip()
     words = actual_title.split()
     seen = set()
@@ -205,6 +205,7 @@ if analyze:
             file_name=f"SEO_Audit_Report_{idx+1}.xlsx",
             key=f"download_{idx}"
         )
+
 
 
 
