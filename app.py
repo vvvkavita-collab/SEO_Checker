@@ -38,11 +38,10 @@ def get_article(soup):
         or soup
     )
 
-# ---------- TEXT LENGTH (Hindi safe) ----------
 def visible_len(text):
     return sum(1 for c in text if not unicodedata.category(c).startswith("C"))
 
-# ---------- PARAGRAPHS ----------
+# ================= CONTENT LOGIC =================
 def get_real_paragraphs(article):
     paras = []
     for p in article.find_all("p"):
@@ -54,7 +53,6 @@ def get_real_paragraphs(article):
         paras.append(text)
     return paras
 
-# ---------- IMAGES ----------
 def get_real_images(article):
     imgs = []
     for fig in article.find_all("figure"):
@@ -68,7 +66,6 @@ def get_real_images(article):
                 imgs.append(img)
     return imgs[:1]
 
-# ---------- LINKS (CONTENT ONLY) ----------
 def get_links(article, domain):
     internal = external = 0
     for p in article.find_all("p"):
@@ -85,7 +82,6 @@ def get_links(article, domain):
                 internal += 1
     return internal, external
 
-# ---------- H2 COUNT ----------
 def get_h2_count_fixed(article):
     h2s = article.find_all("h2")
     real = []
@@ -100,7 +96,7 @@ def get_h2_count_fixed(article):
         real.append(h2)
     return len(real)
 
-# ---------- SEO TITLE ----------
+# ================= SEO TITLE =================
 def generate_seo_title(title, max_len=60):
     if visible_len(title) <= max_len:
         return title
@@ -113,21 +109,29 @@ def generate_seo_title(title, max_len=60):
         out = test
     return out
 
-# ---------- CLEAN URL ----------
-STOP_WORDS = {"is", "the", "and", "of", "to", "in", "for", "on", "with", "by"}
+# ================= CLEAN URL (HINDI FIXED) =================
+STOP_WORDS = {"is", "the", "and", "of", "to", "in", "for", "on", "with", "by", "who"}
 
 def clean_slug(text):
     text = text.lower()
-    text = re.sub(r"[^\w\s-]", "", text)
+
+    # ❌ remove ALL non-english chars (Hindi etc.)
+    text = re.sub(r"[^a-z0-9\s-]", " ", text)
+
     words = [w for w in text.split() if w not in STOP_WORDS]
-    return "-".join(words)
+    return "-".join(words[:10])
 
 def generate_clean_url(url, title):
     parsed = urlparse(url)
     slug = clean_slug(title)
-    return f"{parsed.scheme}://{parsed.netloc}{parsed.path.rsplit('/',1)[0]}/{slug}"
 
-# ---------- SEO SCORE ----------
+    if not slug:
+        return url
+
+    base_path = parsed.path.rsplit("/", 1)[0]
+    return f"{parsed.scheme}://{parsed.netloc}{base_path}/{slug}"
+
+# ================= SCORE =================
 def calculate_score(title_len, url_clean, has_stop):
     score = 100
     if title_len > 60:
@@ -139,10 +143,10 @@ def calculate_score(title_len, url_clean, has_stop):
     return max(score, 0)
 
 # ================= EXCEL FORMAT =================
-def format_excel(sheets_dict):
+def format_excel(sheets):
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        for name, df in sheets_dict.items():
+        for name, df in sheets.items():
             df.to_excel(writer, sheet_name=name, index=False)
 
     output.seek(0)
@@ -219,16 +223,16 @@ def analyze_url(url):
         ["Title + URL SEO Score", f"{score} / 100", "≥ 80", "⚠️" if score < 80 else "✅"],
     ]
 
-    score_sheet = pd.DataFrame(
+    score_logic = pd.DataFrame(
         [
-            ["Title Length > 60", "-20"],
+            ["Title > 60 chars", "-20"],
             ["Unclean URL", "-30"],
             ["Unnecessary Words", "-10"],
         ],
         columns=["Factor", "Penalty"],
     )
 
-    return pd.DataFrame(audit, columns=["Metric", "Actual", "Ideal", "Verdict"]), score_sheet
+    return pd.DataFrame(audit, columns=["Metric", "Actual", "Ideal", "Verdict"]), score_logic
 
 # ================= RUN =================
 if analyze:
@@ -248,13 +252,13 @@ if analyze:
         st.dataframe(audit_df, use_container_width=True)
 
     if all_audit:
-        final_excel = format_excel({
+        excel = format_excel({
             "SEO Audit": pd.concat(all_audit, ignore_index=True),
             "Score Logic": score_df
         })
 
         st.download_button(
-            "⬇️ Download Combined SEO Audit Excel",
-            data=final_excel,
+            "⬇️ Download Final SEO Audit Excel",
+            data=excel,
             file_name="SEO_Audit_Final.xlsx"
         )
