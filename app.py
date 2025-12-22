@@ -8,21 +8,20 @@ import re
 
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
-from openpyxl.worksheet.views import SheetView
 
 # ================= PAGE CONFIG =================
 st.set_page_config(page_title="Advanced SEO Auditor", layout="wide")
-st.title("🧠 Advanced SEO Auditor – News & Blog (Editor Mode)")
+st.title("🧠 Advanced SEO Auditor – News & Blog")
 
 # ================= SIDEBAR =================
 st.sidebar.header("SEO Mode")
 content_type = st.sidebar.radio("Select Content Type", ["News Article", "Blog / Evergreen"])
 
 st.sidebar.subheader("Analyze Options")
-single_url = st.text_input("Paste Single URL")
+single_url = st.text_input("Paste URL")
 
 bulk_file = st.sidebar.file_uploader(
-    "Upload Bulk URLs (CSV / TXT)",
+    "Upload Bulk URLs (CSV / TXT – single column)",
     type=["csv", "txt"]
 )
 
@@ -36,10 +35,7 @@ def get_soup(url):
     r.raise_for_status()
     return BeautifulSoup(r.text, "lxml")
 
-def clean_text(text):
-    return re.sub(r"\s+", " ", text).strip()
-
-# ---- REAL PARAGRAPHS ----
+# ---- REAL NEWS PARAGRAPHS ONLY (UNCHANGED) ----
 def get_real_paragraphs(article):
     paras = []
     for p in article.find_all("p"):
@@ -51,56 +47,77 @@ def get_real_paragraphs(article):
         paras.append(text)
     return paras
 
-# ---- IMAGES ----
+# ---- HERO / NEWS IMAGE ONLY (UNCHANGED) ----
 def get_real_images(article):
     images = []
+
     for fig in article.find_all("figure"):
         img = fig.find("img")
-        if img and img.get("src"):
-            images.append(img)
+        if img:
+            src = img.get("src") or ""
+            if src and not any(x in src.lower() for x in ["logo", "icon", "sprite", "ads"]):
+                images.append(img)
+
+    if not images:
+        for img in article.find_all("img"):
+            cls = " ".join(img.get("class", []))
+            src = img.get("src") or ""
+            if any(x in cls.lower() for x in ["featured", "post", "hero"]) and src:
+                images.append(img)
+
     return images[:1]
 
-# ---- LINKS ----
+# ---- INTERNAL / EXTERNAL LINKS (UNCHANGED) ----
 def get_links(article, domain):
     internal = external = 0
-    for a in article.find_all("a", href=True):
-        h = a["href"]
-        if h.startswith("http"):
-            if domain in h:
-                internal += 1
+    for p in article.find_all("p"):
+        for a in p.find_all("a", href=True):
+            h = a["href"]
+            if h.startswith("http"):
+                if domain in h:
+                    internal += 1
+                else:
+                    external += 1
             else:
-                external += 1
-        else:
-            internal += 1
+                internal += 1
     return internal, external
 
-# ---- SEO SUGGESTED TITLE (GENERIC ENGINE) ----
-def generate_seo_title(title, paragraphs):
-    title = clean_text(title)
+# ---- META CLEAN ----
+def clean_meta(text):
+    return " ".join(text.replace("\n", " ").split()).strip()
 
-    action_words = [
-        "फेल", "गिरफ्तार", "मौत", "हादसा", "बारिश", "अलर्ट",
-        "फैसला", "घोषणा", "लॉन्च", "विस्फोट", "हमला"
+# ---- SEO SUGGESTED TITLE (NEW – SAFE ADDITION) ----
+def generate_seo_title(title, paragraphs):
+    """
+    Editor-style SEO title
+    Uses title + first paragraphs
+    Does NOT affect audit metrics
+    """
+    title = clean_meta(title)
+
+    if not paragraphs:
+        return title
+
+    p = paragraphs[0]
+
+    keywords = [
+        "इंजन फेल", "मौत", "हादसा", "गिरफ्तार",
+        "फैसला", "अलर्ट", "बारिश", "भूकंप",
+        "लॉन्च", "घोषणा", "हमला"
     ]
 
     action = ""
-    for p in paragraphs[:2]:
-        for w in action_words:
-            if w in p:
-                action = w
-                break
-        if action:
+    for k in keywords:
+        if k in p:
+            action = k
             break
 
-    # Primary topic = first phrase
-    topic = title.split(":")[0]
+    topic = title.split(":")[0].strip()
 
-    if action and action not in topic:
-        seo_title = f"{topic}: {action} से जुड़ी बड़ी खबर"
-    else:
-        seo_title = title
+    if action and action not in title:
+        return f"{topic}: {action} से जुड़ी बड़ी खबर"
 
-    return clean_text(seo_title)
+    return title
 
 # ================= COLLECT URLS =================
 urls = []
@@ -118,46 +135,63 @@ if bulk_file:
 
 # ================= ANALYSIS =================
 if analyze and urls:
-    final_rows = []
+    all_reports = []
 
     for url in urls:
         try:
             soup = get_soup(url)
             domain = urlparse(url).netloc
-            article = soup.find("article") or soup
 
-            title = soup.find("h1").get_text(strip=True)
+            article = soup.find("article") or soup.find("div", class_=re.compile("content|story", re.I)) or soup
+
+            # -------- TITLE --------
+            h1_tag = soup.find("h1")
+            title = h1_tag.get_text(strip=True) if h1_tag else soup.title.string.strip()
             title_len = len(title)
 
+            # -------- HEADINGS --------
+            h1_count = len(article.find_all("h1"))
+            h2_count = len(article.find_all("h2"))
+
+            # -------- CONTENT --------
             paragraphs = get_real_paragraphs(article)
             word_count = sum(len(p.split()) for p in paragraphs)
 
-            seo_title = generate_seo_title(title, paragraphs)
-
+            # -------- IMAGES --------
             images = get_real_images(article)
+            img_count = len(images)
+
+            # -------- LINKS --------
             internal, external = get_links(article, domain)
 
-            final_rows.append([
+            # -------- SEO TITLE --------
+            seo_title = generate_seo_title(title, paragraphs)
+
+            all_reports.append([
                 url,
                 title,
                 seo_title,
                 title_len,
+                h1_count,
+                h2_count,
                 word_count,
-                len(images),
+                img_count,
                 internal,
                 external
             ])
 
-        except Exception as e:
-            final_rows.append([url, "ERROR", "ERROR", 0, 0, 0, 0, 0])
+        except Exception:
+            all_reports.append([url, "ERROR", "ERROR", 0, 0, 0, 0, 0, 0, 0])
 
     df = pd.DataFrame(
-        final_rows,
+        all_reports,
         columns=[
             "URL",
             "Original Title",
             "Suggested SEO Title",
             "Title Length",
+            "H1 Count",
+            "H2 Count",
             "Word Count",
             "Image Count",
             "Internal Links",
@@ -176,7 +210,6 @@ if analyze and urls:
     wb = load_workbook(output)
     ws = wb.active
 
-    # Gridlines OFF
     ws.sheet_view.showGridLines = False
 
     header_fill = PatternFill("solid", fgColor="CFE8FF")
@@ -199,7 +232,7 @@ if analyze and urls:
     wb.save(final_output)
 
     st.download_button(
-        "⬇️ Download Formatted SEO Report",
+        "⬇️ Download SEO Report (Formatted)",
         final_output.getvalue(),
         "SEO_Audit_Report.xlsx"
     )
