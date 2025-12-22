@@ -9,6 +9,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 import unicodedata
+from collections import Counter
 
 # ================= PAGE CONFIG =================
 st.set_page_config(page_title="Advanced SEO Auditor – Director Edition", layout="wide")
@@ -78,13 +79,12 @@ def get_links(article, domain):
     return internal, external
 
 # ================= SEO TITLE =================
-def generate_seo_title(title, max_len=60):
+def generate_seo_title(title, max_len=100):
     """Unicode-safe truncate of title without cutting last word"""
     words = title.split()
     result = ""
 
     def visible_len(s):
-        # Count visible characters (ignore control chars)
         return sum(1 for c in s if not unicodedata.category(c).startswith("C"))
 
     for w in words:
@@ -149,6 +149,16 @@ def get_h2_count_fixed(article):
         real_h2.append(h2)
     return len(real_h2)
 
+# ================= TRENDING WORDS ANALYSIS =================
+def trending_words_analysis(article_text, trending_words):
+    results = []
+    text_lower = article_text.lower()
+    for word in trending_words:
+        count = text_lower.count(word.lower())
+        verdict = "✅ Good" if 1 <= count <= 3 else "❌ Check"
+        results.append([word, count, "Max 3 times", verdict])
+    return results
+
 # ================= ANALYSIS =================
 def analyze_url(url):
     soup = get_soup(url)
@@ -161,15 +171,16 @@ def analyze_url(url):
 
     paragraphs = get_real_paragraphs(article)
     word_count = sum(len(p.split()) for p in paragraphs)
+    article_text = " ".join(paragraphs)
 
     img_count = len(get_real_images(article))
     h1_count = len(article.find_all("h1"))
     h2_count = get_h2_count_fixed(article)
     internal, external = get_links(article, domain)
 
-    seo_title = generate_seo_title(title)
+    seo_title = generate_seo_title(title, max_len=100)
 
-    return [
+    data = [
         ["Title Character Count", title_len, "≤ 60", "❌" if title_len > 60 else "✅"],
         ["Suggested SEO Title", title, seo_title, "—"],
         ["Word Count", word_count, "250+", "✅" if word_count >= 250 else "❌"],
@@ -179,6 +190,19 @@ def analyze_url(url):
         ["Internal Links", internal, "2–10", "❌" if internal < 2 else "✅"],
         ["External Links", external, "0–2", "❌" if external > 2 else "✅"],
     ]
+
+    # Detect trending words automatically (top 5 frequent words excluding stopwords)
+    words = re.findall(r'\b\w+\b', article_text.lower())
+    stopwords = set([
+        "the","is","at","which","on","and","a","an","for","to","of","in","with",
+        "that","this","as","by","from","it","be","or","are","was","has","have"
+    ])
+    freq_words = [w for w in words if w not in stopwords and len(w)>3]
+    counter = Counter(freq_words)
+    top_trending = [w for w, c in counter.most_common(5)]
+    trending_data = trending_words_analysis(article_text, top_trending)
+
+    return data, trending_data
 
 # ================= RUN =================
 if analyze:
@@ -190,12 +214,19 @@ if analyze:
         urls = [url]
 
     for idx, u in enumerate(urls):
-        data = analyze_url(u)
+        data, trending_data = analyze_url(u)
         df = pd.DataFrame(data, columns=["Metric", "Actual", "Ideal", "Verdict"])
 
         st.subheader(f"📊 SEO Audit Report – URL {idx+1}")
         st.dataframe(df, use_container_width=True)
 
+        # Trending Keywords Table
+        if trending_data:
+            df_trend = pd.DataFrame(trending_data, columns=["Trending Word", "Count in Article", "Ideal", "Verdict"])
+            st.subheader("🔥 Trending Keywords Usage")
+            st.dataframe(df_trend, use_container_width=True)
+
+        # Excel download
         excel = format_excel(df)
         st.download_button(
             label="⬇️ Download Director Ready SEO Report",
