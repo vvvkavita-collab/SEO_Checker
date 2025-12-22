@@ -19,8 +19,6 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 # ================= SIDEBAR =================
 st.sidebar.header("SEO Mode")
-content_type = st.sidebar.radio("Select Content Type", ["News Article", "Blog / Evergreen"])
-st.sidebar.markdown("---")
 bulk_file = st.sidebar.file_uploader("Upload Bulk URLs (TXT / CSV)", type=["txt", "csv"])
 url_input = st.text_input("Paste URL")
 analyze = st.button("Analyze")
@@ -109,29 +107,24 @@ def generate_seo_title(title, max_len=60):
         out = test
     return out
 
-# ================= CLEAN URL (HINDI FIXED) =================
-STOP_WORDS = {"is", "the", "and", "of", "to", "in", "for", "on", "with", "by", "who"}
+# ================= CLEAN URL =================
+STOP_WORDS = {"is","the","and","of","to","in","for","on","with","by","who"}
 
 def clean_slug(text):
     text = text.lower()
-
-    # ❌ remove ALL non-english chars (Hindi etc.)
     text = re.sub(r"[^a-z0-9\s-]", " ", text)
-
     words = [w for w in text.split() if w not in STOP_WORDS]
     return "-".join(words[:10])
 
 def generate_clean_url(url, title):
     parsed = urlparse(url)
     slug = clean_slug(title)
-
     if not slug:
         return url
+    base = parsed.path.rsplit("/", 1)[0]
+    return f"{parsed.scheme}://{parsed.netloc}{base}/{slug}"
 
-    base_path = parsed.path.rsplit("/", 1)[0]
-    return f"{parsed.scheme}://{parsed.netloc}{base_path}/{slug}"
-
-# ================= SCORE =================
+# ================= SCORE LOGIC =================
 def calculate_score(title_len, url_clean, has_stop):
     score = 100
     if title_len > 60:
@@ -205,11 +198,10 @@ def analyze_url(url):
     internal, external = get_links(article, domain)
 
     found_stop = [w for w in STOP_WORDS if f" {w} " in title.lower()]
-    url_verdict = "✅" if url.rstrip("/") == clean_url.rstrip("/") else "❌"
+    url_clean_flag = url.rstrip("/") == clean_url.rstrip("/")
+    score = calculate_score(visible_len(title), url_clean_flag, bool(found_stop))
 
-    score = calculate_score(visible_len(title), url_verdict == "✅", bool(found_stop))
-
-    audit = [
+    audit_df = pd.DataFrame([
         ["Title Character Count", visible_len(title), "≤ 60", "❌" if visible_len(title) > 60 else "✅"],
         ["Suggested SEO Title", title, seo_title, "—"],
         ["Word Count", word_count, "250+", "❌" if word_count < 250 else "✅"],
@@ -219,42 +211,47 @@ def analyze_url(url):
         ["Internal Links", internal, "2–10", "❌" if internal < 2 else "✅"],
         ["External Links", external, "0–2", "❌" if external > 2 else "✅"],
         ["Unnecessary Words", ", ".join(found_stop) if found_stop else "None", "No", "❌" if found_stop else "✅"],
-        ["Suggested Clean SEO URL", url, clean_url, url_verdict],
+        ["Suggested Clean SEO URL", url, clean_url, "✅" if url_clean_flag else "❌"],
         ["Title + URL SEO Score", f"{score} / 100", "≥ 80", "⚠️" if score < 80 else "✅"],
-    ]
+    ], columns=["Metric", "Actual", "Ideal", "Verdict"])
 
-    score_logic = pd.DataFrame(
-        [
-            ["Title > 60 chars", "-20"],
-            ["Unclean URL", "-30"],
-            ["Unnecessary Words", "-10"],
-        ],
-        columns=["Factor", "Penalty"],
-    )
+    grading_df = pd.DataFrame([
+        ["Base Score", "100"],
+        ["Title > 60 characters", "-20"],
+        ["URL not clean", "-30"],
+        ["Unnecessary words in title", "-10"],
+        ["Final Score", score],
+    ], columns=["Scoring Rule", "Value"])
 
-    return pd.DataFrame(audit, columns=["Metric", "Actual", "Ideal", "Verdict"]), score_logic
+    return audit_df, grading_df
 
 # ================= RUN =================
 if analyze:
     urls = []
     if bulk_file:
-        lines = bulk_file.read().decode("utf-8").splitlines()
-        urls = [l.strip() for l in lines if l.strip()]
+        urls = [l.strip() for l in bulk_file.read().decode("utf-8").splitlines() if l.strip()]
     elif url_input:
         urls = [url_input]
 
     all_audit = []
+    grading_table = None
+
     for u in urls:
-        audit_df, score_df = analyze_url(u)
-        all_audit.append(audit_df)
+        audit_df, grading_df = analyze_url(u)
+        grading_table = grading_df
 
         st.subheader(f"📊 SEO Audit – {u}")
         st.dataframe(audit_df, use_container_width=True)
 
+        st.subheader("📐 SEO Score / Grading Logic")
+        st.dataframe(grading_df, use_container_width=True)
+
+        all_audit.append(audit_df)
+
     if all_audit:
         excel = format_excel({
             "SEO Audit": pd.concat(all_audit, ignore_index=True),
-            "Score Logic": score_df
+            "Score Logic": grading_table
         })
 
         st.download_button(
