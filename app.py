@@ -78,34 +78,35 @@ def get_links(article, domain):
     return internal, external
 
 # ================= SEO TITLE =================
+import spacy
+from transformers import pipeline
+
+# Load Hindi/English NER model (multilingual)
+nlp = spacy.load("xx_ent_wiki_sm")
+
+# Summarizer (multilingual transformer)
+summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
+
 def generate_seo_title(actual_title, content="", max_len=60):
-    import unicodedata
+    text = actual_title + " " + content
 
-    # Normalize
-    text = (actual_title + " " + content).strip()
+    # Step 1: Summarize
+    summary = summarizer(text, max_length=40, min_length=10, do_sample=False)[0]['summary_text']
 
-    # Split by whitespace (Unicode safe)
-    words = text.split()
+    # Step 2: Extract entities
+    doc = nlp(text)
+    entities = [ent.text for ent in doc.ents]
 
-    # Remove duplicates, keep order
-    seen = set()
-    keywords = []
-    for w in words:
-        wl = w.lower()
-        if wl not in seen and len(w) > 2:
-            seen.add(wl)
-            keywords.append(w)
+    # Step 3: Build SEO title
+    base = summary
+    if entities:
+        base = ", ".join(set(entities[:3])) + " – " + summary
 
-    # Build suggested title from first few keywords
-    suggested = " ".join(keywords[:8])
+    # Step 4: Length control
+    if len(base) > max_len:
+        base = base[:max_len].rsplit(" ", 1)[0]
 
-    # Length control
-    def visible_len(s):
-        return sum(1 for c in s if not unicodedata.category(c).startswith("C"))
-    if visible_len(suggested) > max_len:
-        suggested = suggested[:max_len].rsplit(" ", 1)[0]
-
-    return suggested
+    return base
     
 # ================= EXCEL FORMAT =================
 def format_excel(df):
@@ -216,6 +217,7 @@ if analyze:
             file_name=f"SEO_Audit_Report_{idx+1}.xlsx",
             key=f"download_{idx}"
         )
+
 
 
 
