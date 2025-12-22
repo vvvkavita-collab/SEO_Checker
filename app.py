@@ -78,36 +78,35 @@ def get_links(article, domain):
     return internal, external
 
 # ================= SEO TITLE =================
-from collections import Counter
-import re, unicodedata
-
 def generate_seo_title(actual_title, content="", max_len=60):
+    import unicodedata
+
     # Normalize
     text = (actual_title + " " + content).strip()
-    text = re.sub(r"[\"\'“”‘’]", "", text)
 
-    # Tokenize (Unicode safe)
-    words = re.findall(r'\w+', text, flags=re.UNICODE)
+    # Split by whitespace (Unicode safe)
+    words = text.split()
 
-    # Remove very short/common words
-    stopwords = {"में","पर","और","का","की","से","था","थे","है","हैं","ने","को","भी","के"}
-    keywords = [w for w in words if len(w) > 2 and w.lower() not in stopwords]
+    # Remove duplicates, keep order
+    seen = set()
+    keywords = []
+    for w in words:
+        wl = w.lower()
+        if wl not in seen and len(w) > 2:
+            seen.add(wl)
+            keywords.append(w)
 
-    # Frequency count
-    freq = Counter(keywords)
-    top = [w for w,_ in freq.most_common(6)]
-
-    # Build suggested title
-    suggested = " ".join(top)
+    # Build suggested title from first few keywords
+    suggested = " ".join(keywords[:8])
 
     # Length control
     def visible_len(s):
         return sum(1 for c in s if not unicodedata.category(c).startswith("C"))
     if visible_len(suggested) > max_len:
-        suggested = suggested[:max_len].rsplit(" ",1)[0]
+        suggested = suggested[:max_len].rsplit(" ", 1)[0]
 
     return suggested
-
+    
 # ================= EXCEL FORMAT =================
 def format_excel(df):
     output = BytesIO()
@@ -217,6 +216,7 @@ if analyze:
             file_name=f"SEO_Audit_Report_{idx+1}.xlsx",
             key=f"download_{idx}"
         )
+
 
 
 
