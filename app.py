@@ -81,7 +81,7 @@ def get_links(article, domain):
 import re
 import unicodedata
 
-def ai_seo_title(actual_title, content="", max_len=65):
+def generate_seo_title(actual_title, content="", max_len=70):
     """
     AI Summarizer + SEO Enhancer
     - Summarizes headline + content
@@ -220,6 +220,7 @@ if analyze:
             file_name=f"SEO_Audit_Report_{idx+1}.xlsx",
             key=f"download_{idx}"
         )
+
 
 
 
