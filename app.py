@@ -161,7 +161,7 @@ if analyze and url:
 
         st.subheader("✂️ Title Optimization")
         st.write("**Original Title:**", title)
-        st.write("**Suggested SEO Title:**", short_title)
+        st.write("**Suggested SEO Title (Usable):**", seo_title)
 
         output = BytesIO()
         df.to_excel(output, index=False)
@@ -170,6 +170,7 @@ if analyze and url:
     except Exception as e:
         st.error("Error occurred while analyzing the page")
         st.exception(e)
+
 
 
 
