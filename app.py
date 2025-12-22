@@ -78,21 +78,37 @@ def get_links(article, domain):
     return internal, external
 
 # ================= SEO TITLE =================
-def generate_seo_title(title, max_len=60):
-    """Unicode-safe truncate of title without cutting last word"""
-    words = title.split()
-    result = ""
+import re
+import unicodedata
 
+def generate_seo_title(actual_title, content="", max_len=60):
+    """
+    Generate SEO-friendly suggested title:
+    - Uses keywords from actual title + content
+    - Adds modifiers for SEO
+    - Ensures length <= max_len
+    """
+    # Step 1: Normalize
+    actual_title = actual_title.strip()
+    
+    # Step 2: Extract keywords (simple split, can improve with NLP)
+    words = re.findall(r'\w+', actual_title.lower())
+    keywords = list(dict.fromkeys(words))[:5]  # unique first 5 words
+    
+    # Step 3: Add SEO modifiers
+    modifiers = ["Latest", "Breaking News", "Update", "Explained"]
+    
+    # Step 4: Build suggested title
+    suggested = " ".join(modifiers[:2]) + ": " + " ".join(keywords).title()
+    
+    # Step 5: Ensure length limit
     def visible_len(s):
-        # Count visible characters (ignore control chars)
         return sum(1 for c in s if not unicodedata.category(c).startswith("C"))
-
-    for w in words:
-        candidate = (result + " " + w).strip() if result else w
-        if visible_len(candidate) > max_len:
-            break
-        result = candidate
-    return result
+    
+    if visible_len(suggested) > max_len:
+        suggested = suggested[:max_len].rsplit(" ", 1)[0]
+    
+    return suggested
 
 # ================= EXCEL FORMAT =================
 def format_excel(df):
@@ -203,3 +219,4 @@ if analyze:
             file_name=f"SEO_Audit_Report_{idx+1}.xlsx",
             key=f"download_{idx}"
         )
+
