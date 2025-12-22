@@ -235,8 +235,6 @@ grading_df = pd.DataFrame(
     columns=["Scoring Rule", "Value"]
 )
 
-    return audit_df, grading_df
-
 # ================= RUN =================
 if analyze:
     urls = []
@@ -271,4 +269,5 @@ if analyze:
             data=excel,
             file_name="SEO_Audit_Final.xlsx"
         )
+
 
