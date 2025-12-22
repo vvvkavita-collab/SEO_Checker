@@ -176,7 +176,7 @@ def analyze_url(url):
         ["Internal Links", internal, "2–10", "❌" if internal < 2 else "✅"],
         ["External Links", external, "0–2", "❌" if external > 2 else "✅"],
         ["Unnecessary Words", ", ".join(found_stop) if found_stop else "None", "No", "❌" if found_stop else "✅"],
-        ["Suggested Clean SEO URL", suggested_url, "Clean URL", "—"],
+        ["Suggested Clean SEO URL", url, suggested_url, url_verdict],
         ["Title + URL SEO Score", f"{score} / 100", "≥ 80", "⚠️" if score < 80 else "✅"],
     ]
 
@@ -236,3 +236,4 @@ if analyze:
         excel,
         "Final_SEO_Audit_Report.xlsx",
     )
+
