@@ -9,6 +9,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 import unicodedata
+import os
 
 # ================= PAGE CONFIG =================
 st.set_page_config(page_title="Advanced SEO Auditor – Director Edition", layout="wide")
@@ -77,37 +78,89 @@ def get_links(article, domain):
                 internal += 1
     return internal, external
 
+# ================= NLP BOOTSTRAP =================
+@st.cache_resource
+def load_nlp():
+    import spacy
+    try:
+        return spacy.load("xx_ent_wiki_sm")
+    except OSError:
+        os.system("python -m spacy download xx_ent_wiki_sm")
+        return spacy.load("xx_ent_wiki_sm")
+
+@st.cache_resource
+def load_summarizer():
+    try:
+        from transformers import pipeline
+        return pipeline("summarization", model="facebook/bart-large-cnn")
+    except Exception:
+        return None
+
+nlp = load_nlp()
+summarizer = load_summarizer()
+
 # ================= SEO TITLE =================
-import spacy
-from transformers import pipeline
-
-# Load Hindi/English NER model (multilingual)
-nlp = spacy.load("xx_ent_wiki_sm")
-
-# Summarizer (multilingual transformer)
-summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
-
 def generate_seo_title(actual_title, content="", max_len=60):
-    text = actual_title + " " + content
+    import re
 
-    # Step 1: Summarize
-    summary = summarizer(text, max_length=40, min_length=10, do_sample=False)[0]['summary_text']
+    text = (actual_title or "").strip()
+    body = (content or "").strip()
+    full = (text + " " + body).strip()
+
+    # Step 1: Summarize (transformers if available, else rule-based)
+    summary = ""
+    if summarizer:
+        try:
+            input_for_model = full[:1000]
+            out = summarizer(input_for_model, max_length=40, min_length=10, do_sample=False)
+            summary = (out[0]["summary_text"] or "").strip()
+        except Exception:
+            summary = ""
+    if not summary:
+        clauses = re.split(r"[,:।!?\-–—…]", text)
+        clauses = [c.strip() for c in clauses if len(c.strip()) > 2]
+        summary = " – ".join(clauses[:2]) if clauses else text
 
     # Step 2: Extract entities
-    doc = nlp(text)
-    entities = [ent.text for ent in doc.ents]
+    entities = []
+    try:
+        doc = nlp(full)
+        raw_ents = [ent.text.strip() for ent in doc.ents if len(ent.text.strip()) > 1]
+        seen = set()
+        for e in raw_ents:
+            k = e.lower()
+            if k not in seen:
+                seen.add(k)
+                entities.append(e)
+    except Exception:
+        entities = []
 
-    # Step 3: Build SEO title
-    base = summary
+    # Step 3: Clean fillers
+    def clean(p):
+        p = re.sub(r"[\"\'“”‘’]", "", p)
+        p = re.sub(r"\s+", " ", p).strip()
+        p = re.sub(r"(ने कहा|बताया कि|के बयान पर|पर प्रतिक्रिया|मचा)", "", p)
+        return p.strip()
+
+    summary = clean(summary)
+
+    # Step 4: Compose
+    parts = []
     if entities:
-        base = ", ".join(set(entities[:3])) + " – " + summary
+        ent_phrase = ", ".join(entities[:2])
+        if ent_phrase and ent_phrase not in summary:
+            parts.append(ent_phrase)
+    parts.append(summary)
+    suggested = " – ".join([p for p in parts if p])
 
-    # Step 4: Length control
-    if len(base) > max_len:
-        base = base[:max_len].rsplit(" ", 1)[0]
+    # Step 5: Length guard
+    def visible_len(s):
+        return sum(1 for c in s if not unicodedata.category(c).startswith("C"))
+    if visible_len(suggested) > max_len:
+        suggested = suggested[:max_len].rsplit(" ", 1)[0]
 
-    return base
-    
+    return suggested.strip("–-, ")
+
 # ================= EXCEL FORMAT =================
 def format_excel(df):
     output = BytesIO()
@@ -134,8 +187,6 @@ def format_excel(df):
         cell.font = bold
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        cell.border = border
-
     for row in ws.iter_rows(min_row=2):
         for cell in row:
             cell.alignment = Alignment(vertical="top", wrap_text=True)
@@ -181,11 +232,12 @@ def analyze_url(url):
     h2_count = get_h2_count_fixed(article)
     internal, external = get_links(article, domain)
 
-    seo_title = generate_seo_title(title)
+    content_text = " ".join(paragraphs[:3])  # short, relevant context
+    seo_title = generate_seo_title(title, content_text)
 
     return [
         ["Title Character Count", title_len, "≤ 60", "❌" if title_len > 60 else "✅"],
-        ["Suggested SEO Title", title, seo_title, "—"],
+        ["Suggested SEO Title", seo_title, "—", "—"],
         ["Word Count", word_count, "250+", "✅" if word_count >= 250 else "❌"],
         ["News Image Count", img_count, "1+", "✅" if img_count >= 1 else "❌"],
         ["H1 Count", h1_count, "1", "✅" if h1_count == 1 else "❌"],
@@ -204,7 +256,12 @@ if analyze:
         urls = [url]
 
     for idx, u in enumerate(urls):
-        data = analyze_url(u)
+        try:
+            data = analyze_url(u)
+        except Exception as e:
+            st.error(f"Failed to analyze: {u}\nError: {e}")
+            continue
+
         df = pd.DataFrame(data, columns=["Metric", "Actual", "Ideal", "Verdict"])
 
         st.subheader(f"📊 SEO Audit Report – URL {idx+1}")
@@ -217,17 +274,3 @@ if analyze:
             file_name=f"SEO_Audit_Report_{idx+1}.xlsx",
             key=f"download_{idx}"
         )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
