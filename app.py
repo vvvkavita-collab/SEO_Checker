@@ -37,21 +37,18 @@ def get_article(soup):
 # -------- IMAGE LOGIC --------
 def get_real_images(article):
     images = []
-
     for fig in article.find_all("figure"):
         img = fig.find("img")
         if img:
             src = img.get("src") or ""
             if src and not any(x in src.lower() for x in ["logo", "icon", "sprite", "ads"]):
                 images.append(img)
-
     if not images:
         for img in article.find_all("img"):
             cls = " ".join(img.get("class", []))
             src = img.get("src") or ""
             if any(x in cls.lower() for x in ["featured", "post", "hero"]) and src:
                 images.append(img)
-
     return images[:1]
 
 # -------- PARAGRAPHS --------
@@ -82,19 +79,21 @@ def get_links(article, domain):
     return internal, external
 
 # ================= SEO TITLE =================
-def generate_seo_title(title, paragraphs):
-    # अगर title ≤ 60 characters है, 그대로 return
-    if len(title) <= 60:
+def generate_seo_title(title, max_len=60):
+    """
+    Truncate title word-by-word to max_len characters without cutting last word awkwardly.
+    """
+    if len(title) <= max_len:
         return title
-    
-    # word-by-word truncate to ≤ 60
+
     words = title.split()
     new_title = ""
     for w in words:
-        if len(new_title) + len(w) + 1 > 60:  # +1 for space
+        # next word add करने पर भी limit exceed नहीं होना चाहिए
+        if len(new_title) + len(w) + (1 if new_title else 0) > max_len:
             break
-        new_title += (w + " ")
-    return new_title.strip()
+        new_title += (" " if new_title else "") + w
+    return new_title
 
 # ================= EXCEL FORMAT =================
 def format_excel(df):
@@ -140,24 +139,18 @@ def format_excel(df):
 def get_h2_count_fixed(article):
     h2s = article.find_all("h2")
     real_h2 = []
-
     for idx, h2 in enumerate(h2s):
         text = h2.get_text(strip=True)
-
-        # Ignore first H2 if it is very long (likely intro/lead)
+        # Ignore first H2 if very long (intro/lead)
         if idx == 0 and len(text) > 100:
             continue
-
-        # Ignore ads, related, subscribe, promo sections
+        # Ignore ads / promo / related sections
         if re.search(r"(advertisement|related|subscribe|promo|sponsored|news in short)", text, re.I):
             continue
-
-        # Ignore very short H2 (labels)
+        # Ignore very short H2 labels
         if len(text) < 20:
             continue
-
         real_h2.append(h2)
-
     return len(real_h2)
 
 # ================= ANALYSIS =================
@@ -178,7 +171,7 @@ def analyze_url(url):
     h2_count = get_h2_count_fixed(article)
     internal, external = get_links(article, domain)
 
-    seo_title = generate_seo_title(title, paragraphs)
+    seo_title = generate_seo_title(title)
 
     return [
         ["Title Character Count", title_len, "≤ 60", "❌" if title_len > 60 else "✅"],
@@ -213,5 +206,5 @@ if analyze:
             label="⬇️ Download Director Ready SEO Report",
             data=excel,
             file_name=f"SEO_Audit_Report_{idx+1}.xlsx",
-            key=f"download_{idx}"   # Unique key to prevent StreamlitDuplicateElementId
+            key=f"download_{idx}"   # Unique key
         )
