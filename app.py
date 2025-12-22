@@ -153,7 +153,7 @@ def analyze_url(url):
 
     return [
         ["Title Character Count", title_len, "≤ 60", "❌" if title_len > 60 else "✅"],
-        ["Suggested SEO Title", seo_title, "Auto Optimized", "—"],
+        ["Suggested SEO Title", title, seo_title, "—"],
         ["Word Count", word_count, "250+", "✅" if word_count >= 250 else "❌"],
         ["News Image Count", img_count, "1+", "✅" if img_count >= 1 else "❌"],
         ["H1 Count", h1_count, "1", "✅" if h1_count == 1 else "❌"],
@@ -185,3 +185,4 @@ if analyze:
             excel,
             "SEO_Audit_Report.xlsx"
         )
+
