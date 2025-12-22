@@ -78,10 +78,17 @@ def get_links(article, domain):
     return internal, external
 
 # ================= SEO TITLE =================
-def generate_seo_title(actual_title, content="", max_len=70):
-    actual_title = actual_title.strip()
+import re
+import unicodedata
 
-    # Remove quotes and filler phrases
+def ai_seo_title(actual_title, content="", max_len=65):
+    """
+    AI Summarizer + SEO Enhancer
+    - Summarizes headline + content
+    - Adds SEO modifiers
+    - Ensures length <= max_len
+    """
+    # Clean headline
     clean = re.sub(r"[\"\'“”‘’]", "", actual_title)
     clean = re.sub(r"(ने कहा|बताया कि|के बयान पर|पर पलटवार|मचा|हुआ|हुई)", "", clean)
 
@@ -89,18 +96,20 @@ def generate_seo_title(actual_title, content="", max_len=70):
     phrases = re.split(r"[,:।!]", clean)
     phrases = [p.strip() for p in phrases if len(p.strip()) > 0]
 
-    # Add modifier
+    # Pick top 2–3 phrases
+    core = ", ".join(phrases[:3])
+
+    # Add SEO modifier
     modifier = "ताज़ा खबर: "
-    result = modifier
+    suggested = modifier + core
 
-    for p in phrases:
-        candidate = result + p + ", "
-        visible = sum(1 for c in candidate if not unicodedata.category(c).startswith("C"))
-        if visible > max_len:
-            break
-        result = candidate
+    # Length control
+    def visible_len(s):
+        return sum(1 for c in s if not unicodedata.category(c).startswith("C"))
+    if visible_len(suggested) > max_len:
+        suggested = suggested[:max_len].rsplit(" ", 1)[0]
 
-    return result.strip(", ")
+    return suggested
 
 # ================= EXCEL FORMAT =================
 def format_excel(df):
@@ -211,6 +220,7 @@ if analyze:
             file_name=f"SEO_Audit_Report_{idx+1}.xlsx",
             key=f"download_{idx}"
         )
+
 
 
 
