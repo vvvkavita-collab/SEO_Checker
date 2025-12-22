@@ -34,7 +34,7 @@ def get_soup(url):
 def get_article(soup):
     return soup.find("article") or soup.find("div", class_=re.compile("content|story", re.I)) or soup
 
-# -------- ORIGINAL WORKING IMAGE LOGIC (RESTORED) --------
+# -------- ORIGINAL WORKING IMAGE LOGIC --------
 def get_real_images(article):
     images = []
 
@@ -81,7 +81,7 @@ def get_links(article, domain):
                 internal += 1
     return internal, external
 
-# ================= SEO TITLE (EDITOR GRADE) =================
+# ================= SEO TITLE =================
 def generate_seo_title(title, paragraphs):
     text = " ".join(paragraphs).lower()
 
@@ -92,7 +92,7 @@ def generate_seo_title(title, paragraphs):
 
     return title[:60].rsplit(" ", 1)[0]
 
-# ================= EXCEL FORMAT (FIXED) =================
+# ================= EXCEL FORMAT =================
 def format_excel(df):
     output = BytesIO()
     df.to_excel(output, index=False)
@@ -132,13 +132,30 @@ def format_excel(df):
     final.seek(0)
     return final
 
+# ================= H2 COUNT FIX =================
+def get_h2_count(article):
+    h2s = article.find_all("h2")
+    real_h2 = []
+
+    for h2 in h2s:
+        text = h2.get_text(strip=True)
+        # Ignore very short H2 (probably intro/meta)
+        if len(text) < 20:
+            continue
+        # Ignore ads, related, subscribe etc.
+        if re.search(r"(advertisement|related|subscribe|news in short|promo|sponsored)", text, re.I):
+            continue
+        real_h2.append(h2)
+    return len(real_h2)
+
 # ================= ANALYSIS =================
 def analyze_url(url):
     soup = get_soup(url)
     article = get_article(soup)
     domain = urlparse(url).netloc
 
-    title = soup.find("h1").get_text(strip=True)
+    title_tag = soup.find("h1")
+    title = title_tag.get_text(strip=True) if title_tag else "No H1 Found"
     title_len = len(title)
 
     paragraphs = get_real_paragraphs(article)
@@ -146,7 +163,7 @@ def analyze_url(url):
 
     img_count = len(get_real_images(article))
     h1_count = len(article.find_all("h1"))
-    h2_count = len(article.find_all("h2"))
+    h2_count = get_h2_count(article)
     internal, external = get_links(article, domain)
 
     seo_title = generate_seo_title(title, paragraphs)
@@ -185,4 +202,3 @@ if analyze:
             excel,
             "SEO_Audit_Report.xlsx"
         )
-
