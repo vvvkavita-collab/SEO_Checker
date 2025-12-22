@@ -9,9 +9,12 @@ from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
+# AI summarization
+from transformers import pipeline
+
 # ================= PAGE CONFIG =================
-st.set_page_config(page_title="AI SEO Auditor (API) – Director Edition", layout="wide")
-st.title("🧠 AI SEO Auditor – News & Blog (HuggingFace API)")
+st.set_page_config(page_title="AI SEO Auditor – Director Edition", layout="wide")
+st.title("🧠 AI SEO Auditor – News & Blog")
 
 # ================= SIDEBAR =================
 st.sidebar.header("SEO Mode")
@@ -23,8 +26,13 @@ analyze = st.button("Analyze")
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-HF_API_URL = "https://api-inference.huggingface.co/models/google/mt5-small"
-HF_API_TOKEN = "YOUR_HUGGINGFACE_API_TOKEN"  # Replace with your HuggingFace API token
+# ================= AI Pipeline =================
+@st.cache_resource
+def load_ai_model():
+    generator = pipeline("summarization", model="google/mt5-small")
+    return generator
+
+generator = load_ai_model()
 
 # ================= HELPERS =================
 def get_soup(url):
@@ -90,20 +98,11 @@ def get_h2_count_fixed(article):
         real_h2.append(h2)
     return len(real_h2)
 
-def generate_seo_title_api(paragraphs):
+def generate_seo_title_ai(paragraphs):
     text = " ".join(paragraphs)
-    headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
-    payload = {"inputs": text, "parameters": {"max_length": 20, "min_length": 10}}
     try:
-        r = requests.post(HF_API_URL, headers=headers, json=payload, timeout=30)
-        r.raise_for_status()
-        result = r.json()
-        if isinstance(result, list) and 'summary_text' in result[0]:
-            return result[0]['summary_text']
-        elif isinstance(result, list) and 'generated_text' in result[0]:
-            return result[0]['generated_text']
-        else:
-            return "AI SEO title generation failed"
+        seo_title = generator(text, max_length=20, min_length=10, do_sample=False)
+        return seo_title[0]['summary_text']
     except Exception as e:
         return "AI SEO title generation failed"
 
@@ -153,7 +152,7 @@ def analyze_url(url):
     h2_count = get_h2_count_fixed(article)
     internal, external = get_links(article, domain)
 
-    seo_title = generate_seo_title_api(paragraphs)
+    seo_title = generate_seo_title_ai(paragraphs)
 
     return [
         ["Title Character Count", title_len, "≤ 60", "❌" if title_len > 60 else "✅"],
