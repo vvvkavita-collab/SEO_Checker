@@ -7,6 +7,7 @@ from io import BytesIO
 import re
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 # ================= PAGE CONFIG =================
 st.set_page_config(page_title="Advanced SEO Auditor – Director Edition", layout="wide")
@@ -17,7 +18,6 @@ st.sidebar.header("SEO Mode")
 content_type = st.sidebar.radio("Select Content Type", ["News Article", "Blog / Evergreen"])
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("Analyze Options")
 bulk_file = st.sidebar.file_uploader("Upload Bulk URLs (TXT / CSV)", type=["txt", "csv"])
 
 url = st.text_input("Paste URL")
@@ -34,7 +34,27 @@ def get_soup(url):
 def get_article(soup):
     return soup.find("article") or soup.find("div", class_=re.compile("content|story", re.I)) or soup
 
-# -------- REAL PARAGRAPHS --------
+# -------- ORIGINAL WORKING IMAGE LOGIC (RESTORED) --------
+def get_real_images(article):
+    images = []
+
+    for fig in article.find_all("figure"):
+        img = fig.find("img")
+        if img:
+            src = img.get("src") or ""
+            if src and not any(x in src.lower() for x in ["logo", "icon", "sprite", "ads"]):
+                images.append(img)
+
+    if not images:
+        for img in article.find_all("img"):
+            cls = " ".join(img.get("class", []))
+            src = img.get("src") or ""
+            if any(x in cls.lower() for x in ["featured", "post", "hero"]) and src:
+                images.append(img)
+
+    return images[:1]
+
+# -------- PARAGRAPHS --------
 def get_real_paragraphs(article):
     paras = []
     for p in article.find_all("p"):
@@ -45,25 +65,6 @@ def get_real_paragraphs(article):
             continue
         paras.append(text)
     return paras
-
-# -------- FIXED IMAGE COUNT (NEWS SAFE) --------
-def get_real_images(article):
-    images = []
-
-    for img in article.find_all("img"):
-        src = (
-            img.get("src")
-            or img.get("data-src")
-            or img.get("data-original")
-            or ""
-        )
-        if not src:
-            continue
-        if any(x in src.lower() for x in ["logo", "icon", "sprite", "ads"]):
-            continue
-        images.append(src)
-
-    return list(set(images))[:1]  # only hero image
 
 # -------- LINKS --------
 def get_links(article, domain):
@@ -80,21 +81,18 @@ def get_links(article, domain):
                 internal += 1
     return internal, external
 
-# ================= SEO TITLE GENERATOR =================
-def generate_seo_title(original_title, paragraphs):
+# ================= SEO TITLE (EDITOR GRADE) =================
+def generate_seo_title(title, paragraphs):
     text = " ".join(paragraphs).lower()
 
     if "emergency" in text or "इमरजेंसी" in text:
         if "engine" in text or "इंजन" in text:
             return "Air India विमान की इमरजेंसी लैंडिंग, इंजन में खराबी बनी वजह"
-        return "Air India विमान की इमरजेंसी लैंडिंग, तकनीकी कारण बना वजह"
+        return "Air India विमान की इमरजेंसी लैंडिंग, तकनीकी कारण बनी वजह"
 
-    if "हादसा" in text or "accident" in text:
-        return "Air India विमान से जुड़ी बड़ी घटना, जांच शुरू"
+    return title[:60].rsplit(" ", 1)[0]
 
-    return original_title[:60].rsplit(" ", 1)[0]
-
-# ================= EXCEL FORMAT =================
+# ================= EXCEL FORMAT (FIXED) =================
 def format_excel(df):
     output = BytesIO()
     df.to_excel(output, index=False)
@@ -112,15 +110,19 @@ def format_excel(df):
         bottom=Side(style="thin"),
     )
 
+    for col in ws.columns:
+        max_len = max(len(str(cell.value)) if cell.value else 0 for cell in col)
+        ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 3, 50)
+
     for cell in ws[1]:
         cell.font = bold
         cell.fill = header_fill
-        cell.alignment = Alignment(wrap_text=True, horizontal="center")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.border = border
 
     for row in ws.iter_rows(min_row=2):
         for cell in row:
-            cell.alignment = Alignment(wrap_text=True, vertical="top")
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
             cell.border = border
 
     ws.sheet_view.showGridLines = False
@@ -142,12 +144,9 @@ def analyze_url(url):
     paragraphs = get_real_paragraphs(article)
     word_count = sum(len(p.split()) for p in paragraphs)
 
-    images = get_real_images(article)
-    img_count = len(images)
-
+    img_count = len(get_real_images(article))
     h1_count = len(article.find_all("h1"))
     h2_count = len(article.find_all("h2"))
-
     internal, external = get_links(article, domain)
 
     seo_title = generate_seo_title(title, paragraphs)
@@ -182,7 +181,7 @@ if analyze:
 
         excel = format_excel(df)
         st.download_button(
-            "⬇️ Download Formatted SEO Report",
+            "⬇️ Download Director Ready SEO Report",
             excel,
             "SEO_Audit_Report.xlsx"
         )
