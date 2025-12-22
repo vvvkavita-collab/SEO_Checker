@@ -41,7 +41,6 @@ def get_real_paragraphs(article):
 def get_real_images(article):
     images = []
 
-    # figure based images
     for fig in article.find_all("figure"):
         img = fig.find("img")
         if img:
@@ -49,7 +48,6 @@ def get_real_images(article):
             if src and not any(x in src.lower() for x in ["logo", "icon", "sprite", "ads"]):
                 images.append(img)
 
-    # fallback featured image
     if not images:
         for img in article.find_all("img"):
             cls = " ".join(img.get("class", []))
@@ -57,9 +55,9 @@ def get_real_images(article):
             if any(x in cls.lower() for x in ["featured", "post", "hero"]) and src:
                 images.append(img)
 
-    return images[:1]  # only main image
+    return images[:1]
 
-# ---- INTERNAL / EXTERNAL LINKS (CONTENT ONLY) ----
+# ---- INTERNAL / EXTERNAL LINKS ----
 def get_links(article, domain):
     internal = external = 0
     for p in article.find_all("p"):
@@ -78,16 +76,29 @@ def get_links(article, domain):
 def clean_meta(text):
     return " ".join(text.replace("\n", " ").split()).strip()
 
-# ---- SEO TITLE SHORTENER ----
+# ---- IMPROVED SEO TITLE SHORTENER (FIXED) ----
 def shorten_title(title, limit=60):
+    title = title.strip()
+
     if len(title) <= limit:
         return title
 
-    cut = title[:limit]
-    if " " in cut:
-        cut = cut.rsplit(" ", 1)[0]
+    # Prefer natural separators
+    separators = [" | ", " – ", " - ", " : ", "।"]
+    for sep in separators:
+        parts = title.split(sep)
+        if len(parts) > 1 and len(parts[0]) <= limit:
+            return parts[0].strip()
 
-    return cut + "…"
+    # Fallback: cut by words, not characters
+    words = title.split()
+    new_title = ""
+    for w in words:
+        if len(new_title) + len(w) + 1 > limit:
+            break
+        new_title += w + " "
+
+    return new_title.strip() + "…"
 
 # ================= ANALYSIS =================
 if analyze and url:
@@ -104,7 +115,9 @@ if analyze and url:
         short_title = shorten_title(title)
 
         # -------- META --------
-        meta_tag = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", attrs={"property": "og:description"})
+        meta_tag = soup.find("meta", attrs={"name": "description"}) or soup.find(
+            "meta", attrs={"property": "og:description"}
+        )
         meta = clean_meta(meta_tag["content"]) if meta_tag and meta_tag.get("content") else ""
         meta_chars = len(meta)
 
@@ -141,12 +154,10 @@ if analyze and url:
         st.subheader("📊 SEO Audit Report")
         st.dataframe(df, use_container_width=True)
 
-        # SHOW TITLES
         st.subheader("✂️ Title Optimization")
         st.write("**Original Title:**", title)
         st.write("**Suggested SEO Title:**", short_title)
 
-        # DOWNLOAD
         output = BytesIO()
         df.to_excel(output, index=False)
         st.download_button("⬇️ Download SEO Report", output.getvalue(), "seo_report.xlsx")
