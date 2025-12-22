@@ -83,14 +83,18 @@ def get_links(article, domain):
 
 # ================= SEO TITLE =================
 def generate_seo_title(title, paragraphs):
-    text = " ".join(paragraphs).lower()
-
-    if "emergency" in text or "इमरजेंसी" in text:
-        if "engine" in text or "इंजन" in text:
-            return "Air India विमान की इमरजेंसी लैंडिंग, इंजन में खराबी बनी वजह"
-        return "Air India विमान की इमरजेंसी लैंडिंग, तकनीकी कारण बनी वजह"
-
-    return title[:60].rsplit(" ", 1)[0]
+    # अगर title ≤ 60 characters है, 그대로 return
+    if len(title) <= 60:
+        return title
+    
+    # word-by-word truncate to ≤ 60
+    words = title.split()
+    new_title = ""
+    for w in words:
+        if len(new_title) + len(w) + 1 > 60:  # +1 for space
+            break
+        new_title += (w + " ")
+    return new_title.strip()
 
 # ================= EXCEL FORMAT =================
 def format_excel(df):
