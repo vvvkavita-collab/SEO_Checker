@@ -34,7 +34,6 @@ def get_soup(url):
 def get_article(soup):
     return soup.find("article") or soup.find("div", class_=re.compile("content|story", re.I)) or soup
 
-# -------- IMAGE LOGIC --------
 def get_real_images(article):
     images = []
     for fig in article.find_all("figure"):
@@ -51,7 +50,6 @@ def get_real_images(article):
                 images.append(img)
     return images[:1]
 
-# -------- PARAGRAPHS --------
 def get_real_paragraphs(article):
     paras = []
     for p in article.find_all("p"):
@@ -63,7 +61,6 @@ def get_real_paragraphs(article):
         paras.append(text)
     return paras
 
-# -------- LINKS --------
 def get_links(article, domain):
     internal = external = 0
     for p in article.find_all("p"):
@@ -84,9 +81,12 @@ def load_nlp():
     import spacy
     try:
         return spacy.load("xx_ent_wiki_sm")
-    except OSError:
-        os.system("python -m spacy download xx_ent_wiki_sm")
-        return spacy.load("xx_ent_wiki_sm")
+    except Exception:
+        try:
+            os.system("python -m spacy download xx_ent_wiki_sm")
+            return spacy.load("xx_ent_wiki_sm")
+        except Exception:
+            return spacy.blank("xx")  # fallback so app keeps running
 
 @st.cache_resource
 def load_summarizer():
@@ -107,13 +107,12 @@ def generate_seo_title(actual_title, content="", max_len=60):
     body = (content or "").strip()
     full = (text + " " + body).strip()
 
-    # Step 1: Summarize (transformers if available, else rule-based)
+    # 1) Summarize (transformers if available, else rule-based)
     summary = ""
     if summarizer:
         try:
-            input_for_model = full[:1000]
-            out = summarizer(input_for_model, max_length=40, min_length=10, do_sample=False)
-            summary = (out[0]["summary_text"] or "").strip()
+            out = summarizer(full[:1000], max_length=40, min_length=10, do_sample=False)
+            summary = (out[0].get("summary_text", "") or "").strip()
         except Exception:
             summary = ""
     if not summary:
@@ -121,21 +120,23 @@ def generate_seo_title(actual_title, content="", max_len=60):
         clauses = [c.strip() for c in clauses if len(c.strip()) > 2]
         summary = " – ".join(clauses[:2]) if clauses else text
 
-    # Step 2: Extract entities
+    # 2) Entities (safe if NER unavailable)
     entities = []
     try:
         doc = nlp(full)
-        raw_ents = [ent.text.strip() for ent in doc.ents if len(ent.text.strip()) > 1]
-        seen = set()
-        for e in raw_ents:
-            k = e.lower()
-            if k not in seen:
-                seen.add(k)
-                entities.append(e)
+        raw_ents = getattr(doc, "ents", [])
+        if raw_ents:
+            seen = set()
+            for ent in raw_ents:
+                e = ent.text.strip()
+                k = e.lower()
+                if e and k not in seen:
+                    seen.add(k)
+                    entities.append(e)
     except Exception:
         entities = []
 
-    # Step 3: Clean fillers
+    # 3) Clean fillers
     def clean(p):
         p = re.sub(r"[\"\'“”‘’]", "", p)
         p = re.sub(r"\s+", " ", p).strip()
@@ -144,7 +145,7 @@ def generate_seo_title(actual_title, content="", max_len=60):
 
     summary = clean(summary)
 
-    # Step 4: Compose
+    # 4) Compose headline
     parts = []
     if entities:
         ent_phrase = ", ".join(entities[:2])
@@ -153,7 +154,7 @@ def generate_seo_title(actual_title, content="", max_len=60):
     parts.append(summary)
     suggested = " – ".join([p for p in parts if p])
 
-    # Step 5: Length guard
+    # 5) Length guard (visible characters)
     def visible_len(s):
         return sum(1 for c in s if not unicodedata.category(c).startswith("C"))
     if visible_len(suggested) > max_len:
@@ -187,6 +188,8 @@ def format_excel(df):
         cell.font = bold
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = border
+
     for row in ws.iter_rows(min_row=2):
         for cell in row:
             cell.alignment = Alignment(vertical="top", wrap_text=True)
@@ -232,7 +235,7 @@ def analyze_url(url):
     h2_count = get_h2_count_fixed(article)
     internal, external = get_links(article, domain)
 
-    content_text = " ".join(paragraphs[:3])  # short, relevant context
+    content_text = " ".join(paragraphs[:3])  # short, relevant context for title
     seo_title = generate_seo_title(title, content_text)
 
     return [
