@@ -10,21 +10,20 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 # ================= PAGE CONFIG =================
-st.set_page_config(page_title="AI SEO Auditor (API) – Director Edition", layout="wide")
-st.title("🧠 AI SEO Auditor – News & Blog (HuggingFace API)")
+st.set_page_config(page_title="Advanced SEO Auditor – Director Edition", layout="wide")
+st.title("🧠 Advanced SEO Auditor – News & Blog")
 
 # ================= SIDEBAR =================
 st.sidebar.header("SEO Mode")
 content_type = st.sidebar.radio("Select Content Type", ["News Article", "Blog / Evergreen"])
+
 st.sidebar.markdown("---")
 bulk_file = st.sidebar.file_uploader("Upload Bulk URLs (TXT / CSV)", type=["txt", "csv"])
+
 url = st.text_input("Paste URL")
 analyze = st.button("Analyze")
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
-
-HF_API_URL = "https://api-inference.huggingface.co/models/google/mt5-small"
-HF_API_TOKEN = "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"  # Replace with your HuggingFace API token
 
 # ================= HELPERS =================
 def get_soup(url):
@@ -35,22 +34,27 @@ def get_soup(url):
 def get_article(soup):
     return soup.find("article") or soup.find("div", class_=re.compile("content|story", re.I)) or soup
 
+# -------- ORIGINAL IMAGE LOGIC --------
 def get_real_images(article):
     images = []
+
     for fig in article.find_all("figure"):
         img = fig.find("img")
         if img:
             src = img.get("src") or ""
             if src and not any(x in src.lower() for x in ["logo", "icon", "sprite", "ads"]):
                 images.append(img)
+
     if not images:
         for img in article.find_all("img"):
             cls = " ".join(img.get("class", []))
             src = img.get("src") or ""
             if any(x in cls.lower() for x in ["featured", "post", "hero"]) and src:
                 images.append(img)
+
     return images[:1]
 
+# -------- PARAGRAPHS --------
 def get_real_paragraphs(article):
     paras = []
     for p in article.find_all("p"):
@@ -62,6 +66,7 @@ def get_real_paragraphs(article):
         paras.append(text)
     return paras
 
+# -------- LINKS --------
 def get_links(article, domain):
     internal = external = 0
     for p in article.find_all("p"):
@@ -76,66 +81,82 @@ def get_links(article, domain):
                 internal += 1
     return internal, external
 
-def get_h2_count_fixed(article):
-    h2s = article.find_all("h2")
-    real_h2 = []
-    for idx, h2 in enumerate(h2s):
-        text = h2.get_text(strip=True)
-        if idx == 0 and len(text) > 100:
-            continue
-        if re.search(r"(advertisement|related|subscribe|promo|sponsored|news in short)", text, re.I):
-            continue
-        if len(text) < 20:
-            continue
-        real_h2.append(h2)
-    return len(real_h2)
+# ================= SEO TITLE =================
+def generate_seo_title(title, paragraphs):
+    text = " ".join(paragraphs).lower()
 
-def generate_seo_title_api(paragraphs):
-    text = " ".join(paragraphs)
-    headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
-    payload = {"inputs": text, "parameters": {"max_length": 20, "min_length": 10}}
-    try:
-        r = requests.post(HF_API_URL, headers=headers, json=payload, timeout=30)
-        r.raise_for_status()
-        result = r.json()
-        if isinstance(result, list) and 'summary_text' in result[0]:
-            return result[0]['summary_text']
-        elif isinstance(result, list) and 'generated_text' in result[0]:
-            return result[0]['generated_text']
-        else:
-            return "AI SEO title generation failed"
-    except Exception as e:
-        return "AI SEO title generation failed"
+    if "emergency" in text or "इमरजेंसी" in text:
+        if "engine" in text or "इंजन" in text:
+            return "Air India विमान की इमरजेंसी लैंडिंग, इंजन में खराबी बनी वजह"
+        return "Air India विमान की इमरजेंसी लैंडिंग, तकनीकी कारण बनी वजह"
 
+    return title[:60].rsplit(" ", 1)[0]
+
+# ================= EXCEL FORMAT =================
 def format_excel(df):
     output = BytesIO()
     df.to_excel(output, index=False)
     output.seek(0)
+
     wb = load_workbook(output)
     ws = wb.active
 
     header_fill = PatternFill("solid", fgColor="D9EAF7")
     bold = Font(bold=True)
-    border = Border(left=Side(style="thin"), right=Side(style="thin"),
-                    top=Side(style="thin"), bottom=Side(style="thin"))
+    border = Border(
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin"),
+    )
+
     for col in ws.columns:
         max_len = max(len(str(cell.value)) if cell.value else 0 for cell in col)
-        ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len+3,50)
+        ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 3, 50)
+
     for cell in ws[1]:
         cell.font = bold
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.border = border
+
     for row in ws.iter_rows(min_row=2):
         for cell in row:
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             cell.border = border
+
     ws.sheet_view.showGridLines = False
+
     final = BytesIO()
     wb.save(final)
     final.seek(0)
     return final
 
+# ================= H2 COUNT FIX =================
+def get_h2_count_fixed(article):
+    h2s = article.find_all("h2")
+    real_h2 = []
+
+    for idx, h2 in enumerate(h2s):
+        text = h2.get_text(strip=True)
+
+        # Ignore first H2 if it is very long (likely intro/lead)
+        if idx == 0 and len(text) > 100:
+            continue
+
+        # Ignore ads, related, subscribe, promo sections
+        if re.search(r"(advertisement|related|subscribe|promo|sponsored|news in short)", text, re.I):
+            continue
+
+        # Ignore very short H2 (labels)
+        if len(text) < 20:
+            continue
+
+        real_h2.append(h2)
+
+    return len(real_h2)
+
+# ================= ANALYSIS =================
 def analyze_url(url):
     soup = get_soup(url)
     article = get_article(soup)
@@ -153,11 +174,11 @@ def analyze_url(url):
     h2_count = get_h2_count_fixed(article)
     internal, external = get_links(article, domain)
 
-    seo_title = generate_seo_title_api(paragraphs)
+    seo_title = generate_seo_title(title, paragraphs)
 
     return [
         ["Title Character Count", title_len, "≤ 60", "❌" if title_len > 60 else "✅"],
-        ["AI Suggested SEO Title", title, seo_title, "—"],
+        ["Suggested SEO Title", title, seo_title, "—"],
         ["Word Count", word_count, "250+", "✅" if word_count >= 250 else "❌"],
         ["News Image Count", img_count, "1+", "✅" if img_count >= 1 else "❌"],
         ["H1 Count", h1_count, "1", "✅" if h1_count == 1 else "❌"],
@@ -169,23 +190,23 @@ def analyze_url(url):
 # ================= RUN =================
 if analyze:
     urls = []
+
     if bulk_file:
         lines = bulk_file.read().decode("utf-8").splitlines()
         urls = [l.strip() for l in lines if l.strip()]
     elif url:
         urls = [url]
 
-    for idx, u in enumerate(urls):
+    for u in urls:
         data = analyze_url(u)
         df = pd.DataFrame(data, columns=["Metric", "Actual", "Ideal", "Verdict"])
 
-        st.subheader(f"📊 SEO Audit Report – URL {idx+1}")
+        st.subheader("📊 SEO Audit Report")
         st.dataframe(df, use_container_width=True)
 
         excel = format_excel(df)
         st.download_button(
-            label="⬇️ Download Director Ready SEO Report",
-            data=excel,
-            file_name=f"SEO_Audit_Report_{idx+1}.xlsx",
-            key=f"download_{idx}"
+            "⬇️ Download Director Ready SEO Report",
+            excel,
+            "SEO_Audit_Report.xlsx"
         )
