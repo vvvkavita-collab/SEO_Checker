@@ -33,7 +33,7 @@ def get_soup(url):
 def get_article(soup):
     return soup.find("article") or soup.find("div", class_=re.compile("content|story", re.I)) or soup
 
-# -------- IMAGE LOGIC --------
+# ================= IMAGE LOGIC =================
 def get_real_images(article):
     images = []
     for fig in article.find_all("figure"):
@@ -50,7 +50,7 @@ def get_real_images(article):
                 images.append(img)
     return images[:1]
 
-# -------- PARAGRAPHS --------
+# ================= PARAGRAPHS =================
 def get_real_paragraphs(article):
     paras = []
     for p in article.find_all("p"):
@@ -62,7 +62,7 @@ def get_real_paragraphs(article):
         paras.append(text)
     return paras
 
-# -------- LINKS --------
+# ================= LINKS =================
 def get_links(article, domain):
     internal = external = 0
     for p in article.find_all("p"):
@@ -79,10 +79,6 @@ def get_links(article, domain):
 
 # ================= SEO TITLE =================
 def generate_seo_title(title, max_len=60):
-    """
-    Truncate title to max_len visible characters without cutting last word.
-    Works correctly for Hindi / multi-byte characters.
-    """
     def visible_len(s):
         return sum(1 for c in s if not unicodedata.category(c).startswith("C"))
 
@@ -92,66 +88,54 @@ def generate_seo_title(title, max_len=60):
     words = title.split()
     new_title = ""
     for w in words:
-        next_title = (new_title + " " + w).strip() if new_title else w
-        if visible_len(next_title) > max_len:
+        temp = (new_title + " " + w).strip()
+        if visible_len(temp) > max_len:
             break
-        new_title = next_title
+        new_title = temp
     return new_title
 
-# ================= EXCEL FORMAT =================
-def format_excel(df):
-    output = BytesIO()
-    df.to_excel(output, index=False)
-    output.seek(0)
+# ================= SEO URL RULES =================
+def analyze_seo_url_rules(url):
+    parsed = urlparse(url)
+    slug = parsed.path.strip("/").lower()
+    words = slug.split("-") if slug else []
+    stop_words = {"and", "or", "the", "is", "was", "of", "to", "for", "with"}
 
-    wb = load_workbook(output)
-    ws = wb.active
+    rules = []
 
-    header_fill = PatternFill("solid", fgColor="D9EAF7")
-    bold = Font(bold=True)
-    border = Border(
-        left=Side(style="thin"),
-        right=Side(style="thin"),
-        top=Side(style="thin"),
-        bottom=Side(style="thin"),
-    )
+    rules.append(["URL Lowercase", "Yes" if url == url.lower() else "No", "Yes", "✅" if url == url.lower() else "❌"])
+    rules.append(["Hyphens Used (No Underscore)", "Yes" if "_" not in url else "No", "Yes", "✅" if "_" not in url else "❌"])
+    rules.append([
+        "No Special Characters",
+        "Clean" if not re.search(r"[^a-z0-9\-\/:.]", url.lower()) else "Special Chars",
+        "Clean",
+        "✅" if not re.search(r"[^a-z0-9\-\/:.]", url.lower()) else "❌"
+    ])
+    rules.append(["URL Length", len(url), "≤ 80 chars", "✅" if len(url) <= 80 else "❌"])
+    rules.append(["One Clear Topic (Slug Words)", len(words), "≤ 10 words", "✅" if len(words) <= 10 else "⚠️"])
+    rules.append([
+        "Unnecessary Words",
+        "No" if not any(w in stop_words for w in words) else "Yes",
+        "No",
+        "✅" if not any(w in stop_words for w in words) else "❌"
+    ])
 
-    for col in ws.columns:
-        max_len = max(len(str(cell.value)) if cell.value else 0 for cell in col)
-        ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 3, 50)
-
-    for cell in ws[1]:
-        cell.font = bold
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        cell.border = border
-
-    for row in ws.iter_rows(min_row=2):
-        for cell in row:
-            cell.alignment = Alignment(vertical="top", wrap_text=True)
-            cell.border = border
-
-    ws.sheet_view.showGridLines = False
-
-    final = BytesIO()
-    wb.save(final)
-    final.seek(0)
-    return final
+    return rules
 
 # ================= H2 COUNT FIX =================
 def get_h2_count_fixed(article):
     h2s = article.find_all("h2")
-    real_h2 = []
+    real = []
     for idx, h2 in enumerate(h2s):
         text = h2.get_text(strip=True)
         if idx == 0 and len(text) > 100:
             continue
-        if re.search(r"(advertisement|related|subscribe|promo|sponsored|news in short)", text, re.I):
+        if re.search(r"(advertisement|related|subscribe|promo|sponsored)", text, re.I):
             continue
         if len(text) < 20:
             continue
-        real_h2.append(h2)
-    return len(real_h2)
+        real.append(h2)
+    return len(real)
 
 # ================= ANALYSIS =================
 def analyze_url(url):
@@ -172,6 +156,7 @@ def analyze_url(url):
     internal, external = get_links(article, domain)
 
     seo_title = generate_seo_title(title)
+    url_rules = analyze_seo_url_rules(url)
 
     return [
         ["Title Character Count", title_len, "≤ 60", "❌" if title_len > 60 else "✅"],
@@ -182,7 +167,43 @@ def analyze_url(url):
         ["H2 Count", h2_count, "2+", "✅" if h2_count >= 2 else "❌"],
         ["Internal Links", internal, "2–10", "❌" if internal < 2 else "✅"],
         ["External Links", external, "0–2", "❌" if external > 2 else "✅"],
-    ]
+    ] + url_rules
+
+# ================= EXCEL FORMAT =================
+def format_excel(df):
+    output = BytesIO()
+    df.to_excel(output, index=False)
+    output.seek(0)
+
+    wb = load_workbook(output)
+    ws = wb.active
+
+    header_fill = PatternFill("solid", fgColor="D9EAF7")
+    bold = Font(bold=True)
+    border = Border(left=Side(style="thin"), right=Side(style="thin"),
+                    top=Side(style="thin"), bottom=Side(style="thin"))
+
+    for col in ws.columns:
+        max_len = max(len(str(cell.value)) if cell.value else 0 for cell in col)
+        ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 3, 50)
+
+    for cell in ws[1]:
+        cell.font = bold
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.border = border
+
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            cell.border = border
+
+    ws.sheet_view.showGridLines = False
+
+    final = BytesIO()
+    wb.save(final)
+    final.seek(0)
+    return final
 
 # ================= RUN =================
 if analyze:
@@ -202,8 +223,8 @@ if analyze:
 
         excel = format_excel(df)
         st.download_button(
-            label="⬇️ Download Director Ready SEO Report",
-            data=excel,
-            file_name=f"SEO_Audit_Report_{idx+1}.xlsx",
+            "⬇️ Download Director Ready SEO Report",
+            excel,
+            f"SEO_Audit_Report_{idx+1}.xlsx",
             key=f"download_{idx}"
         )
