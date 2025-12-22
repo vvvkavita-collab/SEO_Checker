@@ -77,11 +77,16 @@ def clean_meta(text):
     return " ".join(text.replace("\n", " ").split()).strip()
 
 # ---- IMPROVED SEO TITLE SHORTENER (FIXED) ----
-def shorten_title(title, limit=60):
-    title = title.strip()
+def seo_optimized_title(title):
+    """
+    Returns FULL usable SEO title (no truncation)
+    """
+    title = clean_meta(title)
 
-    if len(title) <= limit:
-        return title
+    # Remove junk brackets / extra spacing
+    title = re.sub(r"\s+", " ", title)
+
+    return title
 
     # Prefer natural separators
     separators = [" | ", " – ", " - ", " : ", "।"]
@@ -165,3 +170,4 @@ if analyze and url:
     except Exception as e:
         st.error("Error occurred while analyzing the page")
         st.exception(e)
+
