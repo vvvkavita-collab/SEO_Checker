@@ -215,13 +215,25 @@ def analyze_url(url):
         ["Title + URL SEO Score", f"{score} / 100", "≥ 80", "⚠️" if score < 80 else "✅"],
     ], columns=["Metric", "Actual", "Ideal", "Verdict"])
 
-    grading_df = pd.DataFrame([
-        ["Base Score", "100"],
-        ["Title > 60 characters", "-20"],
-        ["URL not clean", "-30"],
-        ["Unnecessary words in title", "-10"],
-        ["Final Score", score],
-    ], columns=["Scoring Rule", "Value"])
+    penalties = []
+
+penalties.append(["Base Score", 100])
+
+if visible_len(title) > 60:
+    penalties.append(["Title > 60 characters", -20])
+
+if not url_clean_flag:
+    penalties.append(["URL not clean", -30])
+
+if found_stop:
+    penalties.append(["Unnecessary words in title", -10])
+
+penalties.append(["Final Score", score])
+
+grading_df = pd.DataFrame(
+    penalties,
+    columns=["Scoring Rule", "Value"]
+)
 
     return audit_df, grading_df
 
@@ -259,3 +271,4 @@ if analyze:
             data=excel,
             file_name="SEO_Audit_Final.xlsx"
         )
+
