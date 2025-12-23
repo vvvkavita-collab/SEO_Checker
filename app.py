@@ -10,7 +10,6 @@ import unicodedata
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-from unidecode import unidecode  # pip install unidecode
 
 # ================= PAGE CONFIG =================
 st.set_page_config(page_title="Advanced SEO Auditor – Google Guidelines", layout="wide")
@@ -24,7 +23,6 @@ bulk_file = st.sidebar.file_uploader("Upload Bulk URLs (TXT / CSV)", type=["txt"
 url_input = st.text_input("Paste URL")
 analyze = st.button("Analyze")
 
-# ================= STOP WORDS =================
 STOP_WORDS = [
     "breaking", "exclusive", "shocking", "must read", "update", "alert"
 ]
@@ -48,87 +46,14 @@ def visible_len(text):
 def safe_text(el):
     return el.get_text(" ", strip=True) if el else ""
 
-def get_real_paragraphs(article):
-    paras = []
-    for p in article.find_all("p"):
-        text = p.get_text(" ", strip=True)
-        if len(text) < 80:
-            continue
-        if re.search(r"(advertisement|also read|read more|inputs|agency)", text, re.I):
-            continue
-        paras.append(text)
-    return paras
-
-def get_real_images(article):
-    imgs = []
-    for fig in article.find_all("figure"):
-        img = fig.find("img")
-        if img and img.get("src"):
-            if not re.search(r"(logo|icon|sprite|ads)", img["src"], re.I):
-                imgs.append(img)
-    if not imgs:
-        for img in article.find_all("img"):
-            if img.get("src") and "featured" in " ".join(img.get("class", [])):
-                imgs.append(img)
-    return imgs[:1]
-
-def get_links(article, domain):
-    internal = external = 0
-    for p in article.find_all("p"):
-        for a in p.find_all("a", href=True):
-            h = a["href"].strip()
-            if h.startswith("#") or "javascript" in h:
-                continue
-            if h.startswith("http"):
-                if domain in h:
-                    internal += 1
-                else:
-                    external += 1
-            else:
-                internal += 1
-    return internal, external
-
-def get_h2_count_fixed(article):
-    h2s = article.find_all("h2")
-    real = []
-    for idx, h2 in enumerate(h2s):
-        t = h2.get_text(strip=True)
-        if idx == 0 and len(t) > 100:
-            continue
-        if len(t) < 20:
-            continue
-        if re.search(r"(advertisement|related|subscribe|promo)", t, re.I):
-            continue
-        real.append(h2)
-    return len(real)
-
-def generate_seo_title(title, max_len=70):
-    if visible_len(title) <= max_len:
-        return title
-    words = title.split()
-    out = ""
-    for w in words:
-        test = (out + " " + w).strip()
-        if visible_len(test) > max_len:
-            break
-        out = test
-    return out
-
-# ================= CLEAN URL LOGIC =================
+# ================= CLEAN URL LOGIC (ENGLISH ONLY) =================
 def generate_clean_url(url, title):
     parsed = urlparse(url)
-    # 1. Lowercase
     title = title.lower()
-    # 2. Transliterate Unicode to ASCII
-    slug = unidecode(title)
-    # 3. Keep only a-z, 0-9, space
-    slug = re.sub(r"[^a-z0-9\s]", "", slug)
-    # 4. Replace spaces with hyphen
-    slug = re.sub(r"\s+", "-", slug)
-    # 5. Reduce multiple hyphens
-    slug = re.sub(r"-+", "-", slug)
-    # 6. Trim hyphens
-    slug = slug.strip("-")
+    # take only english words and numbers
+    words = re.findall(r"[a-z0-9]+", title)
+    slug = "-".join(words)
+    slug = re.sub(r"-+", "-", slug).strip("-")
     clean_url = f"{parsed.scheme}://{parsed.netloc}/{slug}"
     return clean_url
 
@@ -391,3 +316,4 @@ if analyze:
                 data=excel,
                 file_name="SEO_Audit_Final.xlsx"
             )
+
