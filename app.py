@@ -23,9 +23,7 @@ bulk_file = st.sidebar.file_uploader("Upload Bulk URLs (TXT / CSV)", type=["txt"
 url_input = st.text_input("Paste URL")
 analyze = st.button("Analyze")
 
-STOP_WORDS = [
-    "breaking", "exclusive", "shocking", "must read", "update", "alert"
-]
+STOP_WORDS = ["breaking", "exclusive", "shocking", "must read", "update", "alert"]
 
 # ================= HELPERS =================
 def get_soup(url):
@@ -34,11 +32,7 @@ def get_soup(url):
     return BeautifulSoup(r.text, "lxml")
 
 def get_article(soup):
-    return (
-        soup.find("article")
-        or soup.find("div", class_=re.compile("content|story|article|post-body", re.I))
-        or soup
-    )
+    return soup.find("article") or soup.find("div", class_=re.compile("content|story|article|post-body", re.I)) or soup
 
 def visible_len(text):
     return sum(1 for c in text if not unicodedata.category(c).startswith("C"))
@@ -46,12 +40,23 @@ def visible_len(text):
 def safe_text(el):
     return el.get_text(" ", strip=True) if el else ""
 
-# ================= CLEAN URL LOGIC (ENGLISH ONLY) =================
+def generate_seo_title(title, max_len=70):
+    if visible_len(title) <= max_len:
+        return title
+    words = title.split()
+    out = ""
+    for w in words:
+        test = (out + " " + w).strip()
+        if visible_len(test) > max_len:
+            break
+        out = test
+    return out
+
+# ================= CLEAN URL LOGIC =================
 def generate_clean_url(url, title):
     parsed = urlparse(url)
     title = title.lower()
-    # take only english words and numbers
-    words = re.findall(r"[a-z0-9]+", title)
+    words = re.findall(r"[a-z0-9]+", title)  # only English words & numbers
     slug = "-".join(words)
     slug = re.sub(r"-+", "-", slug).strip("-")
     clean_url = f"{parsed.scheme}://{parsed.netloc}/{slug}"
@@ -90,6 +95,61 @@ def is_amp(soup):
     amp_tag = soup.find("link", rel="amphtml")
     return bool(amp_tag)
 
+# ================= CONTENT LOGIC =================
+def get_real_paragraphs(article):
+    paras = []
+    for p in article.find_all("p"):
+        text = p.get_text(" ", strip=True)
+        if len(text) < 80:
+            continue
+        if re.search(r"(advertisement|also read|read more|inputs|agency)", text, re.I):
+            continue
+        paras.append(text)
+    return paras
+
+def get_real_images(article):
+    imgs = []
+    for fig in article.find_all("figure"):
+        img = fig.find("img")
+        if img and img.get("src"):
+            if not re.search(r"(logo|icon|sprite|ads)", img["src"], re.I):
+                imgs.append(img)
+    if not imgs:
+        for img in article.find_all("img"):
+            if img.get("src") and "featured" in " ".join(img.get("class", [])):
+                imgs.append(img)
+    return imgs[:1]
+
+def get_links(article, domain):
+    internal = external = 0
+    for p in article.find_all("p"):
+        for a in p.find_all("a", href=True):
+            h = a["href"].strip()
+            if h.startswith("#") or "javascript" in h:
+                continue
+            if h.startswith("http"):
+                if domain in h:
+                    internal += 1
+                else:
+                    external += 1
+            else:
+                internal += 1
+    return internal, external
+
+def get_h2_count_fixed(article):
+    h2s = article.find_all("h2")
+    real = []
+    for idx, h2 in enumerate(h2s):
+        t = h2.get_text(strip=True)
+        if idx == 0 and len(t) > 100:
+            continue
+        if len(t) < 20:
+            continue
+        if re.search(r"(advertisement|related|subscribe|promo)", t, re.I):
+            continue
+        real.append(h2)
+    return len(real)
+
 # ================= SCORE LOGIC =================
 def calculate_score(title_len, word_count, img_count, h1_count, h2_count,
                     internal_links, external_links, has_stop, has_schema, amp_flag, url_clean_flag, meta_image):
@@ -107,23 +167,6 @@ def calculate_score(title_len, word_count, img_count, h1_count, h2_count,
     if not amp_flag: score -= 3
     if not url_clean_flag: score -= 5
     return max(score, 0)
-
-# ================= EXPLANATION SHEET =================
-EXPLANATIONS = pd.DataFrame([
-    ["Title Character Count", "Title length should be 55–70 chars for Google SERP", "Correct → CTR increases, snippet fully visible"],
-    ["Word Count", "Content depth", "300+ words considered informative by Google"],
-    ["News Image Count", "Minimum 1 authentic image", "Improves Google Discover & CTR"],
-    ["Meta Image (OG/Twitter)", "Thumbnail for social/discover", "CTR & visibility improve"],
-    ["H1 Count", "Main headline clarity", "1 H1 helps Google understand topic"],
-    ["H2 Count", "Subheadings readability", "2+ H2 → structured content"],
-    ["Internal Links", "Navigation + SEO juice", "2–10 links → better crawl & engagement"],
-    ["External Links", "References & credibility", "≤2 → authority improves"],
-    ["Unnecessary Words", "Filler words in title", "Avoid → clarity & CTR improve"],
-    ["Structured Data (NewsArticle)", "JSON-LD schema", "Correct → Google News/Top Stories possible"],
-    ["AMP Presence", "Accelerated Mobile Pages support", "Mobile visibility & Discover improve"],
-    ["Suggested Clean SEO URL", "Keyword-rich, short URL", "Crawlability & CTR improve"],
-    ["Title + URL SEO Score", "Overall SEO health", "≥80 → strong Google visibility"],
-], columns=["Metric","Meaning","Impact if Correct"])
 
 # ================= EXCEL FORMAT =================
 def format_excel(sheets):
@@ -246,7 +289,6 @@ def analyze_url(url):
         ["Final Score", score]
     ]
     grading_df = pd.DataFrame(penalties, columns=["Scoring Rule", "Value"])
-
     return audit_df, grading_df
 
 # ================= RUN =================
@@ -274,7 +316,6 @@ if analyze:
 
         progress = st.progress(0)
         status = st.empty()
-
         total = len(urls)
         for idx, u in enumerate(urls, start=1):
             status.text(f"Analyzing {idx}/{total}: {u}")
@@ -299,12 +340,27 @@ if analyze:
 
             all_audit.append(audit_df)
             all_grading.append(grading_df)
-
             progress.progress(idx / total)
 
         status.text("Analysis complete ✔️")
 
         if all_audit:
+            EXPLANATIONS = pd.DataFrame([
+                ["Title Character Count", "Title length should be 55–70 chars for Google SERP", "Correct → CTR increases, snippet fully visible"],
+                ["Word Count", "Content depth", "300+ words considered informative by Google"],
+                ["News Image Count", "Minimum 1 authentic image", "Improves Google Discover & CTR"],
+                ["Meta Image (OG/Twitter)", "Thumbnail for social/discover", "CTR & visibility improve"],
+                ["H1 Count", "Main headline clarity", "1 H1 helps Google understand topic"],
+                ["H2 Count", "Subheadings readability", "2+ H2 → structured content"],
+                ["Internal Links", "Navigation + SEO juice", "2–10 links → better crawl & engagement"],
+                ["External Links", "References & credibility", "≤2 → authority improves"],
+                ["Unnecessary Words", "Filler words in title", "Avoid → clarity & CTR improve"],
+                ["Structured Data (NewsArticle)", "JSON-LD schema", "Correct → Google News/Top Stories possible"],
+                ["AMP Presence", "Accelerated Mobile Pages support", "Mobile visibility & Discover improve"],
+                ["Suggested Clean SEO URL", "Keyword-rich, short URL", "Crawlability & CTR improve"],
+                ["Title + URL SEO Score", "Overall SEO health", "≥80 → strong Google visibility"],
+            ], columns=["Metric","Meaning","Impact if Correct"])
+
             excel = format_excel({
                 "SEO Audit": pd.concat(all_audit, ignore_index=True),
                 "Score Logic": pd.concat(all_grading, ignore_index=True),
@@ -316,4 +372,3 @@ if analyze:
                 data=excel,
                 file_name="SEO_Audit_Final.xlsx"
             )
-
