@@ -241,8 +241,16 @@ def analyze_url(url):
 
     found_stop = [w for w in STOP_WORDS if f" {w} " in title.lower()]
 
-    score = calculate_score(visible_len(title), url_clean_flag, bool(found_stop))
-
+    score = calculate_score(
+    title_len=visible_len(title),
+    word_count=word_count,
+    img_count=img_count,
+    h1_count=h1_count,
+    h2_count=h2_count,
+    internal_links=internal,
+    external_links=external,
+    has_stop=bool(found_stop)
+)
     # ---- SEO Audit Table ----
     audit_df = pd.DataFrame([
         ["Title Character Count", visible_len(title), "≤ 60", "❌" if visible_len(title) > 60 else "✅"],
@@ -307,5 +315,6 @@ if analyze:
             data=excel,
             file_name="SEO_Audit_Final.xlsx"
         )
+
 
 
