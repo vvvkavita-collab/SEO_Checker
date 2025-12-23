@@ -119,11 +119,8 @@ def clean_slug(text):
 def generate_clean_url(url, title):
     parsed = urlparse(url)
     slug = clean_slug(title)
-
-    # ✅ FIX: Hindi / Unicode title → empty slug fallback
     if not slug:
         return url
-
     base = parsed.path.rsplit("/", 1)[0]
     return f"{parsed.scheme}://{parsed.netloc}{base}/{slug}"
 
@@ -158,9 +155,10 @@ def format_excel(sheets):
             bottom=Side(style="thin"),
         )
 
+        # Adjust column width with max cap
         for col in ws.columns:
             max_len = max(len(str(c.value)) if c.value else 0 for c in col)
-            ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 3, 50)
+            ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 3, 40)
 
         for cell in ws[1]:
             cell.font = bold
@@ -205,27 +203,33 @@ def analyze_url(url):
 
     score = calculate_score(visible_len(title), url_clean_flag, bool(found_stop))
 
+    # ---- SEO Audit Table ----
     audit_df = pd.DataFrame([
         ["Title Character Count", visible_len(title), "≤ 60", "❌" if visible_len(title) > 60 else "✅"],
         ["Suggested SEO Title", title, seo_title, "—"],
-        ["Word Count", word_count, "450+", "❌" if word_count < 450 else "✅"],
+        ["Word Count", word_count, "250+", "❌" if word_count < 250 else "✅"],
         ["News Image Count", img_count, "1+", "❌" if img_count < 1 else "✅"],
         ["H1 Count", h1_count, "1", "❌" if h1_count != 1 else "✅"],
         ["H2 Count", h2_count, "2+", "❌" if h2_count < 2 else "✅"],
         ["Internal Links", internal, "2–10", "❌" if internal < 2 else "✅"],
         ["External Links", external, "0–2", "❌" if external > 2 else "✅"],
         ["Unnecessary Words", ", ".join(found_stop) if found_stop else "None", "No", "❌" if found_stop else "✅"],
-        ["Suggested Clean SEO URL", url, clean_url, "✅" if url_clean_flag else "❌"],
+        ["Suggested Clean SEO URL", clean_url, clean_url, "✅" if url_clean_flag else "❌"],
         ["Title + URL SEO Score", f"{score} / 100", "≥ 80", "⚠️" if score < 80 else "✅"],
     ], columns=["Metric", "Actual", "Ideal", "Verdict"])
 
-    grading_df = pd.DataFrame([
-        ["Base Score", 100],
-        ["Title > 60 characters", -20 if visible_len(title) > 60 else 0],
-        ["URL not clean", -30 if not url_clean_flag else 0],
-        ["Unnecessary words in title", -10 if found_stop else 0],
-        ["Final Score", score],
-    ], columns=["Scoring Rule", "Value"])
+    # ---- Grading / Score Table ----
+    penalties = []
+    penalties.append(["Base Score", 100])
+    if visible_len(title) > 60:
+        penalties.append(["Title > 60 characters", -20])
+    if not url_clean_flag:
+        penalties.append(["URL not clean", -30])
+    if found_stop:
+        penalties.append(["Unnecessary words in title", -10])
+    penalties.append(["Final Score", score])
+
+    grading_df = pd.DataFrame(penalties, columns=["Scoring Rule", "Value"])
 
     return audit_df, grading_df
 
