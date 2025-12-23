@@ -238,7 +238,7 @@ def analyze_url(url):
     penalties = [
         ["Base Score", 100],
         ["Title > 60 characters", -15 if visible_len(title) > 60 else 0],
-        ["Word Count < 250", -15 if word_count < 250 else 0],
+        ["Word Count < 450", -15 if word_count < 450 else 0],
         ["News Image Count < 1", -10 if img_count < 1 else 0],
         ["H1 Count != 1", -10 if h1_count != 1 else 0],
         ["H2 Count < 2", -10 if h2_count < 2 else 0],
@@ -285,4 +285,5 @@ if analyze:
             data=excel,
             file_name="SEO_Audit_Final.xlsx"
         )
+
 
