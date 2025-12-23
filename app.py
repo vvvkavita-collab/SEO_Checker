@@ -10,6 +10,7 @@ import unicodedata
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from unidecode import unidecode  # pip install unidecode
 
 # ================= PAGE CONFIG =================
 st.set_page_config(page_title="Advanced SEO Auditor – Google Guidelines", layout="wide")
@@ -114,9 +115,10 @@ def generate_seo_title(title, max_len=70):
     return out
 
 def generate_clean_url(url, title):
-    # keyword-rich, lowercase, hyphen-separated
     parsed = urlparse(url)
-    slug = re.sub(r"[^\w\s-]", "", title.lower()).strip()
+    # Transliterate Hindi/Unicode to ASCII
+    slug = unidecode(title.lower())
+    slug = re.sub(r"[^\w\s-]", "", slug).strip()
     slug = re.sub(r"\s+", "-", slug)
     clean_url = f"{parsed.scheme}://{parsed.netloc}/{slug}"
     return clean_url
@@ -278,7 +280,6 @@ def analyze_url(url):
         meta_image=meta_image
     )
 
-    # ---- SEO Audit Table ----
     audit_df = pd.DataFrame([
         ["Title Character Count", title_len, "55–70", "✅" if 55 <= title_len <= 70 else "⚠️"],
         ["Suggested SEO Title", title, seo_title, "—"],
@@ -296,7 +297,6 @@ def analyze_url(url):
         ["Title + URL SEO Score", f"{score} / 100", "≥ 80", "✅" if score >= 80 else "⚠️"],
     ], columns=["Metric", "Actual", "Ideal", "Verdict"])
 
-    # ---- Grading / Score Table ----
     penalties = [
         ["Base Score", 100],
         ["Title outside 55–70", -12 if title_len > 70 or title_len < 55 else 0],
