@@ -117,15 +117,17 @@ def generate_seo_title(title, max_len=70):
 # ================= CLEAN URL LOGIC =================
 def generate_clean_url(url, title):
     parsed = urlparse(url)
-    # Lowercase + ASCII transliteration
-    slug = unidecode(title.lower())
-    # Remove all non a-z, 0-9, space or hyphen
-    slug = re.sub(r"[^a-z0-9\s-]", "", slug)
-    # Replace spaces with hyphen
+    # 1. Lowercase
+    title = title.lower()
+    # 2. Transliterate Unicode to ASCII
+    slug = unidecode(title)
+    # 3. Keep only a-z, 0-9, space
+    slug = re.sub(r"[^a-z0-9\s]", "", slug)
+    # 4. Replace spaces with hyphen
     slug = re.sub(r"\s+", "-", slug)
-    # Reduce multiple hyphens to single
+    # 5. Reduce multiple hyphens
     slug = re.sub(r"-+", "-", slug)
-    # Trim hyphens
+    # 6. Trim hyphens
     slug = slug.strip("-")
     clean_url = f"{parsed.scheme}://{parsed.netloc}/{slug}"
     return clean_url
