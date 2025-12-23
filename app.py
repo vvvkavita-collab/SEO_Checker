@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 from io import BytesIO
 import re
+import json
 import unicodedata
 
 from openpyxl import load_workbook
@@ -12,8 +13,8 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 # ================= PAGE CONFIG =================
-st.set_page_config(page_title="Advanced SEO Auditor – Director Edition", layout="wide")
-st.title("🧠 Advanced SEO Auditor – News & Blog")
+st.set_page_config(page_title="Advanced SEO Auditor – Google Guidelines", layout="wide")
+st.title("🧠 Advanced SEO Auditor – News & Blog (Google Ready)")
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
@@ -25,19 +26,22 @@ analyze = st.button("Analyze")
 
 # ================= HELPERS =================
 def get_soup(url):
-    r = requests.get(url, headers=HEADERS, timeout=20)
+    r = requests.get(url, headers=HEADERS, timeout=25)
     r.raise_for_status()
     return BeautifulSoup(r.text, "lxml")
 
 def get_article(soup):
     return (
         soup.find("article")
-        or soup.find("div", class_=re.compile("content|story|article", re.I))
+        or soup.find("div", class_=re.compile("content|story|article|post-body", re.I))
         or soup
     )
 
 def visible_len(text):
     return sum(1 for c in text if not unicodedata.category(c).startswith("C"))
+
+def safe_text(el):
+    return el.get_text(" ", strip=True) if el else ""
 
 # ================= CONTENT LOGIC =================
 def get_real_paragraphs(article):
@@ -46,38 +50,37 @@ def get_real_paragraphs(article):
         text = p.get_text(" ", strip=True)
         if len(text) < 80:
             continue
-        if re.search(r"(advertisement|also read|read more|inputs|agency)", text, re.I):
+        if re.search(r"(advertisement|also read|read more|inputs|agency|promo)", text, re.I):
             continue
         paras.append(text)
     return paras
 
 def get_real_images(article):
     imgs = []
-    for fig in article.find_all("figure"):
+    for fig in article.find_all(["figure", "div"], class_=re.compile("figure|image|photo", re.I)):
         img = fig.find("img")
         if img and img.get("src"):
-            if not re.search(r"(logo|icon|sprite|ads)", img["src"], re.I):
+            if not re.search(r"(logo|icon|sprite|ads|pixel)", img["src"], re.I):
                 imgs.append(img)
     if not imgs:
         for img in article.find_all("img"):
-            if img.get("src") and "featured" in " ".join(img.get("class", [])):
+            if img.get("src") and not re.search(r"(logo|icon|sprite|ads|pixel)", img["src"], re.I):
                 imgs.append(img)
-    return imgs[:1]
+    return imgs
 
 def get_links(article, domain):
     internal = external = 0
-    for p in article.find_all("p"):
-        for a in p.find_all("a", href=True):
-            h = a["href"].strip()
-            if h.startswith("#") or "javascript" in h:
-                continue
-            if h.startswith("http"):
-                if domain in h:
-                    internal += 1
-                else:
-                    external += 1
-            else:
+    for a in article.find_all("a", href=True):
+        h = a["href"].strip()
+        if h.startswith("#") or "javascript" in h:
+            continue
+        if h.startswith("http"):
+            if domain in h:
                 internal += 1
+            else:
+                external += 1
+        else:
+            internal += 1
     return internal, external
 
 def get_h2_count_fixed(article):
@@ -95,7 +98,8 @@ def get_h2_count_fixed(article):
     return len(real)
 
 # ================= SEO TITLE =================
-def generate_seo_title(title, max_len=60):
+def generate_seo_title(title, max_len=70):
+    # Google SERP friendly: aim 55–70, truncate beyond 70
     if visible_len(title) <= max_len:
         return title
     words = title.split()
@@ -120,7 +124,7 @@ def generate_clean_url(url, title):
     parsed = urlparse(url)
     slug = clean_slug(title)
     if not slug:
-        return url  # fallback to original
+        return url  # fallback
     path_parts = [p for p in parsed.path.split("/") if p]
     if path_parts:
         path_parts[-1] = slug
@@ -134,25 +138,79 @@ def is_url_clean(url, seo_url):
     clean_slug_part = urlparse(seo_url).path.rstrip("/").split("/")[-1]
     return orig_slug == clean_slug_part
 
+# ================= STRUCTURED DATA & META =================
+def extract_json_ld(soup):
+    data = []
+    for tag in soup.find_all("script", type="application/ld+json"):
+        try:
+            parsed = json.loads(tag.string or "{}")
+            if isinstance(parsed, list):
+                data.extend(parsed)
+            else:
+                data.append(parsed)
+        except Exception:
+            continue
+    return data
+
+def has_newsarticle_schema(json_ld):
+    for obj in json_ld:
+        t = obj.get("@type")
+        if isinstance(t, list):
+            if any(tt.lower() == "newsarticle" for tt in t if isinstance(tt, str)):
+                return True
+        elif isinstance(t, str) and t.lower() == "newsarticle":
+            return True
+    return False
+
+def extract_meta_image(soup):
+    for prop in ["og:image", "twitter:image", "twitter:image:src"]:
+        tag = soup.find("meta", property=prop) or soup.find("meta", attrs={"name": prop})
+        if tag and tag.get("content"):
+            return tag["content"]
+    return None
+
+def is_amp(soup):
+    # Heuristic AMP detection
+    if soup.find("link", rel="amphtml"):
+        return True
+    html_tag = soup.find("html")
+    if html_tag and ("amp" in html_tag.attrs or "⚡" in html_tag.attrs):
+        return True
+    return False
+
 # ================= SCORE LOGIC =================
-def calculate_score(title_len, word_count, img_count, h1_count, h2_count, internal_links, external_links, has_stop):
+def calculate_score(title_len, word_count, img_count, h1_count, h2_count,
+                    internal_links, external_links, has_stop, has_schema, amp_flag):
     score = 100
-    if title_len > 60:
-        score -= 15
-    if word_count < 450:
-        score -= 15
+    # Title length (Google: aim 55–70)
+    if title_len > 70 or title_len < 55:
+        score -= 12
+    # Word count (news minimum depth)
+    if word_count < 300:
+        score -= 12
+    # Images
     if img_count < 1:
         score -= 10
+    # H1
     if h1_count != 1:
         score -= 10
+    # H2
     if h2_count < 2:
-        score -= 10
+        score -= 8
+    # Links
     if internal_links < 2 or internal_links > 10:
         score -= 5
     if external_links > 2:
-        score -= 5
+        score -= 4
+    # Stop words in title
     if has_stop:
+        score -= 6
+    # Structured data bonus/penalty
+    if not has_schema:
         score -= 10
+    # AMP bonus (for news visibility; optional)
+    if not amp_flag:
+        score -= 3
     return max(score, 0)
 
 # ================= EXCEL FORMAT =================
@@ -172,14 +230,17 @@ def format_excel(sheets):
             top=Side(style="thin"),
             bottom=Side(style="thin"),
         )
+        # Autosize
         for col in ws.columns:
-            max_len = max(len(str(c.value)) if c.value else 0 for c in col)
-            ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 3, 50)
+            max_len = max(len(str(c.value)) if c.value is not None else 0 for c in col)
+            ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 3, 60)
+        # Header style
         for cell in ws[1]:
             cell.font = bold
             cell.fill = header_fill
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             cell.border = border
+        # Body style
         for row in ws.iter_rows(min_row=2):
             for cell in row:
                 cell.alignment = Alignment(vertical="top", wrap_text=True)
@@ -192,59 +253,88 @@ def format_excel(sheets):
 
 # ================= ANALYSIS =================
 def analyze_url(url):
-    soup = get_soup(url)
+    try:
+        soup = get_soup(url)
+    except Exception as e:
+        err_df = pd.DataFrame([
+            ["Error", str(e), "-", "❌"]
+        ], columns=["Metric","Actual","Ideal","Verdict"])
+        return err_df, pd.DataFrame([["Final Score", 0]], columns=["Scoring Rule", "Value"])
+
     article = get_article(soup)
     domain = urlparse(url).netloc
-    title_tag = soup.find("h1")
-    title = title_tag.get_text(strip=True) if title_tag else "No H1 Found"
+
+    # Title (H1 preferred; fallback to <title>)
+    title_tag = soup.find("h1") or soup.find("title")
+    title = safe_text(title_tag) if title_tag else "No H1/Title Found"
+
     seo_title = generate_seo_title(title)
     clean_url = generate_clean_url(url, seo_title)
     url_clean_flag = is_url_clean(url, clean_url)
+
     paragraphs = get_real_paragraphs(article)
     word_count = sum(len(p.split()) for p in paragraphs)
-    img_count = len(get_real_images(article))
-    h1_count = len(article.find_all("h1"))
+
+    images = get_real_images(article)
+    img_count = len(images)
+    meta_image = extract_meta_image(soup)
+
+    h1_count = len(article.find_all("h1")) or len(soup.find_all("h1"))
     h2_count = get_h2_count_fixed(article)
+
     internal, external = get_links(article, domain)
     found_stop = [w for w in STOP_WORDS if f" {w} " in title.lower()]
 
+    json_ld = extract_json_ld(soup)
+    schema_flag = has_newsarticle_schema(json_ld)
+    amp_flag = is_amp(soup)
+
+    title_len = visible_len(title)
+
     score = calculate_score(
-        title_len=visible_len(title),
+        title_len=title_len,
         word_count=word_count,
         img_count=img_count,
         h1_count=h1_count,
         h2_count=h2_count,
         internal_links=internal,
         external_links=external,
-        has_stop=bool(found_stop)
+        has_stop=bool(found_stop),
+        has_schema=schema_flag,
+        amp_flag=amp_flag
     )
 
     # ---- SEO Audit Table ----
     audit_df = pd.DataFrame([
-        ["Title Character Count", visible_len(title), "≤ 60", "❌" if visible_len(title) > 60 else "✅"],
+        ["Title Character Count", title_len, "55–70", "✅" if 55 <= title_len <= 70 else "⚠️"],
         ["Suggested SEO Title", title, seo_title, "—"],
-        ["Word Count", word_count, "450+", "❌" if word_count < 450 else "✅"],
-        ["News Image Count", img_count, "1+", "❌" if img_count < 1 else "✅"],
-        ["H1 Count", h1_count, "1", "❌" if h1_count != 1 else "✅"],
-        ["H2 Count", h2_count, "2+", "❌" if h2_count < 2 else "✅"],
-        ["Internal Links", internal, "2–10", "❌" if internal < 2 or internal > 10 else "✅"],
-        ["External Links", external, "0–2", "❌" if external > 2 else "✅"],
-        ["Unnecessary Words", ", ".join(found_stop) if found_stop else "None", "No", "❌" if found_stop else "✅"],
-        ["Suggested Clean SEO URL", url, clean_url, "✅" if url_clean_flag else "❌"],
-        ["Title + URL SEO Score", f"{score} / 100", "≥ 80", "⚠️" if score < 80 else "✅"],
+        ["Word Count", word_count, "300+", "✅" if word_count >= 300 else "⚠️"],
+        ["News Image Count", img_count, "1+", "✅" if img_count >= 1 else "⚠️"],
+        ["Meta Image (OG/Twitter)", meta_image or "None", "Present", "✅" if meta_image else "⚠️"],
+        ["H1 Count", h1_count, "1", "✅" if h1_count == 1 else "⚠️"],
+        ["H2 Count", h2_count, "2+", "✅" if h2_count >= 2 else "⚠️"],
+        ["Internal Links", internal, "2–10", "✅" if 2 <= internal <= 10 else "⚠️"],
+        ["External Links", external, "0–2", "✅" if external <= 2 else "⚠️"],
+        ["Unnecessary Words", ", ".join(found_stop) if found_stop else "None", "No", "✅" if not found_stop else "⚠️"],
+        ["Structured Data (NewsArticle)", "Yes" if schema_flag else "No", "Yes", "✅" if schema_flag else "⚠️"],
+        ["AMP Presence", "Yes" if amp_flag else "No", "Optional (Yes preferred)", "✅" if amp_flag else "ℹ️"],
+        ["Suggested Clean SEO URL", url, clean_url, "✅" if url_clean_flag else "⚠️"],
+        ["Title + URL SEO Score", f"{score} / 100", "≥ 80", "✅" if score >= 80 else "⚠️"],
     ], columns=["Metric", "Actual", "Ideal", "Verdict"])
 
     # ---- Grading / Score Table ----
     penalties = [
         ["Base Score", 100],
-        ["Title > 60 characters", -15 if visible_len(title) > 60 else 0],
-        ["Word Count < 450", -15 if word_count < 450 else 0],
+        ["Title outside 55–70", -12 if title_len > 70 or title_len < 55 else 0],
+        ["Word Count < 300", -12 if word_count < 300 else 0],
         ["News Image Count < 1", -10 if img_count < 1 else 0],
         ["H1 Count != 1", -10 if h1_count != 1 else 0],
-        ["H2 Count < 2", -10 if h2_count < 2 else 0],
+        ["H2 Count < 2", -8 if h2_count < 2 else 0],
         ["Internal Links out of range", -5 if internal < 2 or internal > 10 else 0],
-        ["External Links > 2", -5 if external > 2 else 0],
-        ["Unnecessary words in title", -10 if found_stop else 0],
+        ["External Links > 2", -4 if external > 2 else 0],
+        ["Unnecessary words in title", -6 if found_stop else 0],
+        ["No NewsArticle schema", -10 if not schema_flag else 0],
+        ["No AMP", -3 if not amp_flag else 0],
         ["Final Score", score]
     ]
     grading_df = pd.DataFrame(penalties, columns=["Scoring Rule", "Value"])
@@ -253,37 +343,81 @@ def analyze_url(url):
 
 # ================= RUN =================
 if analyze:
+    # Collect URLs
     urls = []
     if bulk_file:
-        urls = [l.strip() for l in bulk_file.read().decode("utf-8").splitlines() if l.strip()]
-    elif url_input:
-        urls = [url_input]
+        try:
+            raw = bulk_file.read().decode("utf-8", errors="ignore")
+            # If CSV, try first column as URLs
+            if bulk_file.name.lower().endswith(".csv"):
+                df_bulk = pd.read_csv(BytesIO(raw.encode("utf-8")), header=None)
+                urls = [str(x).strip() for x in df_bulk.iloc[:,0].tolist() if str(x).strip()]
+            else:
+                urls = [l.strip() for l in raw.splitlines() if l.strip()]
+        except Exception:
+            st.error("Could not read bulk file. Make sure it's a simple TXT/CSV with URLs.")
+    if url_input:
+        urls.append(url_input.strip())
 
-    all_audit = []
-    grading_table = None
+    urls = [u for u in urls if u]
+    if not urls:
+        st.warning("Please paste a URL or upload a TXT/CSV with URLs.")
+    else:
+        all_audit = []
+        all_grading = []
 
-    for u in urls:
-        audit_df, grading_df = analyze_url(u)
-        grading_table = grading_df
+        progress = st.progress(0)
+        status = st.empty()
 
-        st.subheader(f"📊 SEO Audit – {u}")
-        st.dataframe(audit_df, use_container_width=True)
+        total = len(urls)
+        for idx, u in enumerate(urls, start=1):
+            status.text(f"Analyzing {idx}/{total}: {u}")
+            try:
+                audit_df, grading_df = analyze_url(u)
+            except Exception as e:
+                audit_df = pd.DataFrame([["Error", str(e), "-", "❌"]],
+                                        columns=["Metric","Actual","Ideal","Verdict"])
+                grading_df = pd.DataFrame([["Final Score", 0]],
+                                          columns=["Scoring Rule","Value"])
 
-        st.subheader("📐 SEO Score / Grading Logic")
-        st.dataframe(grading_df, use_container_width=True)
+            st.subheader(f"📊 SEO Audit – {u}")
+            st.dataframe(audit_df, use_container_width=True)
 
-        all_audit.append(audit_df)
+            st.subheader("📐 SEO Score / Grading Logic")
+            st.dataframe(grading_df, use_container_width=True)
 
-    if all_audit:
-        excel = format_excel({
-            "SEO Audit": pd.concat(all_audit, ignore_index=True),
-            "Score Logic": grading_table
-        })
+            # Tag with URL for Excel consolidation
+            audit_df = audit_df.copy()
+            audit_df.insert(0, "URL", u)
+            grading_df = grading_df.copy()
+            grading_df.insert(0, "URL", u)
 
-        st.download_button(
-            "⬇️ Download Final SEO Audit Excel",
-            data=excel,
-            file_name="SEO_Audit_Final.xlsx"
-        )
+            all_audit.append(audit_df)
+            all_grading.append(grading_df)
 
+            progress.progress(idx / total)
 
+        status.text("Analysis complete ✔️")
+
+        if all_audit:
+            excel = format_excel({
+                "SEO Audit": pd.concat(all_audit, ignore_index=True),
+                "Score Logic": pd.concat(all_grading, ignore_index=True)
+            })
+
+            st.download_button(
+                "⬇️ Download Final SEO Audit Excel",
+                data=excel,
+                file_name="SEO_Audit_Final.xlsx"
+            )
+
+# ================= NOTES =================
+st.markdown("""
+> Tip: This auditor uses Google-friendly benchmarks for news:
+> - Title: 55–70 chars, single H1, 2+ H2.
+> - Word count: 300+ (breaking can be lower; analysis can be higher).
+> - Images: ≥1 image; high-quality OG/Twitter image recommended (≥1200px).
+> - Links: 2–10 internal, ≤2 external.
+> - Structured data: NewsArticle JSON-LD present; AMP preferred for Top Stories/Discover.
+> - Clean, keyword-rich URLs; avoid filler stop-words in title.
+""")
