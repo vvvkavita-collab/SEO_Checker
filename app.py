@@ -123,7 +123,7 @@ def generate_clean_url(url, title):
     base = parsed.path.rsplit("/", 1)[0]
     return f"{parsed.scheme}://{parsed.netloc}{base}/{slug}"
 
-# ================= SCORE LOGIC (UNCHANGED) =================
+# ================= SCORE LOGIC =================
 def calculate_score(title_len, url_clean, has_stop):
     score = 100
     if title_len > 60:
@@ -178,17 +178,17 @@ def format_excel(sheets):
 # ================= EXPLANATION SHEET =================
 def seo_explanation_sheet():
     return pd.DataFrame([
-        ["Title Character Count", "50–60 characters title improves Google CTR and visibility"],
-        ["Word Count", "800–1500+ words performs better for News SEO & topical authority"],
-        ["News Image Count", "Multiple images increase engagement and Discover eligibility"],
-        ["H1 Count", "Single H1 helps Google clearly understand main topic"],
-        ["H2 Count", "Subheadings improve structure, readability & SEO"],
-        ["Internal Links", "Distributes SEO authority within the website"],
-        ["External Links", "Links to trusted sources improve credibility"],
-        ["Unnecessary Words", "Removing stop words improves title sharpness & CTR"],
-        ["SEO URL", "Clean URLs improve indexing and click-through rate"],
-        ["CTR", "High CTR = more traffic, better rankings & higher revenue"],
-    ], columns=["SEO Metric", "Explanation"])
+        ["Title Character Count", "50–60 characters improve Google CTR"],
+        ["Word Count", "800–1500+ words ideal for News SEO"],
+        ["News Image Count", "More images improve engagement & Discover reach"],
+        ["H1 Count", "Exactly one H1 clarifies main topic"],
+        ["H2 Count", "Improves structure & readability"],
+        ["Internal Links", "Distributes SEO authority internally"],
+        ["External Links", "Builds credibility with trusted sources"],
+        ["Unnecessary Words", "Removing stop words improves CTR"],
+        ["SEO URL", "Clean URLs improve indexing"],
+        ["CTR", "Higher CTR = more traffic & revenue"],
+    ], columns=["SEO Metric", "Why It Matters"])
 
 # ================= ANALYSIS =================
 def analyze_url(url):
@@ -217,7 +217,7 @@ def analyze_url(url):
 
     audit_df = pd.DataFrame([
         ["Title Character Count", visible_len(title), "50–60", "❌" if visible_len(title) > 60 else "✅"],
-        ["Suggested SEO Title", title, seo_title, "—"],
+        ["Suggested SEO Title", seo_title, "≤ 60 characters", "—"],
         ["Word Count", word_count, "800–1500+", "❌" if word_count < 800 else "✅"],
         ["News Image Count", img_count, "3–6", "❌" if img_count < 3 else "✅"],
         ["H1 Count", h1_count, "Exactly 1", "❌" if h1_count != 1 else "✅"],
@@ -225,7 +225,7 @@ def analyze_url(url):
         ["Internal Links", internal, "3–10", "❌" if internal < 3 else "✅"],
         ["External Links", external, "1–3", "❌" if external > 3 else "✅"],
         ["Unnecessary Words", ", ".join(found_stop) if found_stop else "None", "None", "❌" if found_stop else "✅"],
-        ["Suggested Clean SEO URL", url, clean_url, "Clean URL", "✅" if url_clean_flag else "❌"],
+        ["Suggested Clean SEO URL", clean_url, "Clean keyword URL", "✅" if url_clean_flag else "❌"],
         ["Title + URL SEO Score", f"{score} / 100", "≥ 80", "⚠️" if score < 80 else "✅"],
     ], columns=["Metric", "Actual", "Ideal", "Verdict"])
 
