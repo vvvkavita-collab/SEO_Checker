@@ -43,7 +43,7 @@ def visible_len(text):
 def safe_text(el):
     return el.get_text(" ", strip=True) if el else ""
 
-# ================= CONTENT LOGIC (RESTORED) =================
+# ================= CONTENT LOGIC =================
 def get_real_paragraphs(article):
     paras = []
     for p in article.find_all("p"):
@@ -56,7 +56,6 @@ def get_real_paragraphs(article):
     return paras
 
 def get_real_images(article):
-    # Restore original: prefer figure>img excluding logos/icons/ads; fallback to <img> with 'featured' class; return up to 1
     imgs = []
     for fig in article.find_all("figure"):
         img = fig.find("img")
@@ -67,10 +66,9 @@ def get_real_images(article):
         for img in article.find_all("img"):
             if img.get("src") and "featured" in " ".join(img.get("class", [])):
                 imgs.append(img)
-    return imgs[:1]  # count hero image only, as per original script
+    return imgs[:1]
 
 def get_links(article, domain):
-    # Restore original: count links only within paragraphs to avoid nav/footer noise
     internal = external = 0
     for p in article.find_all("p"):
         for a in p.find_all("a", href=True):
@@ -100,9 +98,7 @@ def get_h2_count_fixed(article):
         real.append(h2)
     return len(real)
 
-# ================= SEO TITLE =================
 def generate_seo_title(title, max_len=70):
-    # Aim 55–70, truncate beyond 70
     if visible_len(title) <= max_len:
         return title
     words = title.split()
@@ -114,106 +110,40 @@ def generate_seo_title(title, max_len=70):
         out = test
     return out
 
-# ================= CLEAN URL =================
-STOP_WORDS = {"is","the","and","of","to","in","for","on","with","by","who"}
-
-def clean_slug(text):
-    text = text.lower()
-    text = re.sub(r"[^a-z0-9\s-]", " ", text)
-    words = [w for w in text.split() if w not in STOP_WORDS]
-    return "-".join(words[:10])
-
-def generate_clean_url(url, title):
-    parsed = urlparse(url)
-    slug = clean_slug(title)
-    if not slug:
-        return url  # fallback
-    path_parts = [p for p in parsed.path.split("/") if p]
-    if path_parts:
-        path_parts[-1] = slug
-    else:
-        path_parts = [slug]
-    clean_path = "/" + "/".join(path_parts)
-    return f"{parsed.scheme}://{parsed.netloc}{clean_path}"
-
-def is_url_clean(url, seo_url):
-    orig_slug = urlparse(url).path.rstrip("/").split("/")[-1]
-    clean_slug_part = urlparse(seo_url).path.rstrip("/").split("/")[-1]
-    return orig_slug == clean_slug_part
-
-# ================= STRUCTURED DATA & META =================
-def extract_json_ld(soup):
-    data = []
-    for tag in soup.find_all("script", type="application/ld+json"):
-        try:
-            parsed = json.loads(tag.string or "{}")
-            if isinstance(parsed, list):
-                data.extend(parsed)
-            else:
-                data.append(parsed)
-        except Exception:
-            continue
-    return data
-
-def has_newsarticle_schema(json_ld):
-    for obj in json_ld:
-        t = obj.get("@type")
-        if isinstance(t, list):
-            if any(isinstance(tt, str) and tt.lower() == "newsarticle" for tt in t):
-                return True
-        elif isinstance(t, str) and t.lower() == "newsarticle":
-            return True
-    return False
-
-def extract_meta_image(soup):
-    for prop in ["og:image", "twitter:image", "twitter:image:src"]:
-        tag = soup.find("meta", property=prop) or soup.find("meta", attrs={"name": prop})
-        if tag and tag.get("content"):
-            return tag["content"]
-    return None
-
-def is_amp(soup):
-    if soup.find("link", rel="amphtml"):
-        return True
-    html_tag = soup.find("html")
-    if html_tag and ("amp" in html_tag.attrs or "⚡" in html_tag.attrs):
-        return True
-    return False
-
 # ================= SCORE LOGIC =================
 def calculate_score(title_len, word_count, img_count, h1_count, h2_count,
-                    internal_links, external_links, has_stop, has_schema, amp_flag):
+                    internal_links, external_links, has_stop, has_schema, amp_flag, url_clean_flag, meta_image):
     score = 100
-    # Title length (aim 55–70)
-    if title_len > 70 or title_len < 55:
-        score -= 12
-    # Word count (news minimum depth)
-    if word_count < 300:
-        score -= 12
-    # Images (hero image expected)
-    if img_count < 1:
-        score -= 10
-    # H1
-    if h1_count != 1:
-        score -= 10
-    # H2
-    if h2_count < 2:
-        score -= 8
-    # Links (paragraph-level only)
-    if internal_links < 2 or internal_links > 10:
-        score -= 5
-    if external_links > 2:
-        score -= 4
-    # Stop words in title
-    if has_stop:
-        score -= 6
-    # Structured data
-    if not has_schema:
-        score -= 10
-    # AMP (optional bonus)
-    if not amp_flag:
-        score -= 3
+    if title_len > 70 or title_len < 55: score -= 12
+    if word_count < 300: score -= 12
+    if img_count < 1: score -= 10
+    if not meta_image: score -= 5
+    if h1_count != 1: score -= 10
+    if h2_count < 2: score -= 8
+    if internal_links < 2 or internal_links > 10: score -= 5
+    if external_links > 2: score -= 4
+    if has_stop: score -= 6
+    if not has_schema: score -= 10
+    if not amp_flag: score -= 3
+    if not url_clean_flag: score -= 5
     return max(score, 0)
+
+# ================= EXPLANATION SHEET =================
+EXPLANATIONS = pd.DataFrame([
+    ["Title Character Count", "Title की लंबाई Google SERP में दिखने लायक होनी चाहिए (55–70 chars)", "सही होने पर CTR बढ़ता है और Google snippet पूरा दिखता है"],
+    ["Word Count", "Content depth दिखाता है", "300+ words होने पर Google इसे informative मानता है"],
+    ["News Image Count", "Article में कम से कम 1 authentic image", "सही होने पर Google Discover और CTR improve होता है"],
+    ["Meta Image (OG/Twitter)", "Social/Discover thumbnail", "सही होने पर CTR और visibility बढ़ती है"],
+    ["H1 Count", "Main headline clarity", "1 H1 होने पर Google को topic साफ़ समझ आता है"],
+    ["H2 Count", "Subheadings readability", "2+ H2 होने पर content structured लगता है"],
+    ["Internal Links", "Site navigation + SEO juice", "2–10 होने पर crawlability और engagement बढ़ता है"],
+    ["External Links", "Credibility दिखाने के लिए references", "≤2 होने पर authority improve होती है"],
+    ["Unnecessary Words", "Title में filler words", "Avoid करने से clarity और CTR improve होता है"],
+    ["Structured Data (NewsArticle)", "JSON-LD schema", "सही होने पर Google News/Top Stories में दिखने की संभावना बढ़ती है"],
+    ["AMP Presence", "Accelerated Mobile Pages support", "AMP होने पर mobile visibility और Discover में chances बढ़ते हैं"],
+    ["Suggested Clean SEO URL", "Keyword-rich, short URL", "Crawlability और CTR improve होता है"],
+    ["Title + URL SEO Score", "Overall SEO health", "80+ होने पर Google visibility strong होती है"],
+], columns=["Metric","Meaning","Impact if Correct"])
 
 # ================= EXCEL FORMAT =================
 def format_excel(sheets):
@@ -232,17 +162,16 @@ def format_excel(sheets):
             top=Side(style="thin"),
             bottom=Side(style="thin"),
         )
-        # Autosize
+        # Column width optimization
         for col in ws.columns:
-            max_len = max(len(str(c.value)) if c.value is not None else 0 for c in col)
-            ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 3, 60)
-        # Header style
+            max_len = max(len(str(c.value)) if c.value else 0 for c in col)
+            width = min(max_len + 3, 40)  # narrower width
+            ws.column_dimensions[get_column_letter(col[0].column)].width = width
         for cell in ws[1]:
             cell.font = bold
             cell.fill = header_fill
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             cell.border = border
-        # Body style
         for row in ws.iter_rows(min_row=2):
             for cell in row:
                 cell.alignment = Alignment(vertical="top", wrap_text=True)
@@ -281,13 +210,10 @@ def analyze_url(url):
     img_count = len(images)
     meta_image = extract_meta_image(soup)
 
-    # H1/H2 counts: within article; fallback to whole soup for H1
     h1_count = len(article.find_all("h1")) or len(soup.find_all("h1"))
     h2_count = get_h2_count_fixed(article)
 
-    # Links (paragraph-level only, restored)
     internal, external = get_links(article, domain)
-
     found_stop = [w for w in STOP_WORDS if f" {w} " in title.lower()]
 
     json_ld = extract_json_ld(soup)
@@ -306,7 +232,9 @@ def analyze_url(url):
         external_links=external,
         has_stop=bool(found_stop),
         has_schema=schema_flag,
-        amp_flag=amp_flag
+        amp_flag=amp_flag,
+        url_clean_flag=url_clean_flag,
+        meta_image=meta_image
     )
 
     # ---- SEO Audit Table ----
@@ -318,8 +246,8 @@ def analyze_url(url):
         ["Meta Image (OG/Twitter)", meta_image or "None", "Present", "✅" if meta_image else "⚠️"],
         ["H1 Count", h1_count, "1", "✅" if h1_count == 1 else "⚠️"],
         ["H2 Count", h2_count, "2+", "✅" if h2_count >= 2 else "⚠️"],
-        ["Internal Links (paragraphs)", internal, "2–10", "✅" if 2 <= internal <= 10 else "⚠️"],
-        ["External Links (paragraphs)", external, "0–2", "✅" if external <= 2 else "⚠️"],
+        ["Internal Links", internal, "2–10", "✅" if 2 <= internal <= 10 else "⚠️"],
+        ["External Links", external, "0–2", "✅" if external <= 2 else "⚠️"],
         ["Unnecessary Words", ", ".join(found_stop) if found_stop else "None", "No", "✅" if not found_stop else "⚠️"],
         ["Structured Data (NewsArticle)", "Yes" if schema_flag else "No", "Yes", "✅" if schema_flag else "⚠️"],
         ["AMP Presence", "Yes" if amp_flag else "No", "Optional (Yes preferred)", "✅" if amp_flag else "ℹ️"],
@@ -333,13 +261,15 @@ def analyze_url(url):
         ["Title outside 55–70", -12 if title_len > 70 or title_len < 55 else 0],
         ["Word Count < 300", -12 if word_count < 300 else 0],
         ["News Image Count < 1", -10 if img_count < 1 else 0],
+        ["No Meta Image", -5 if not meta_image else 0],
         ["H1 Count != 1", -10 if h1_count != 1 else 0],
         ["H2 Count < 2", -8 if h2_count < 2 else 0],
-        ["Internal Links out of range (paragraphs)", -5 if internal < 2 or internal > 10 else 0],
-        ["External Links > 2 (paragraphs)", -4 if external > 2 else 0],
+        ["Internal Links out of range", -5 if internal < 2 or internal > 10 else 0],
+        ["External Links > 2", -4 if external > 2 else 0],
         ["Unnecessary words in title", -6 if found_stop else 0],
         ["No NewsArticle schema", -10 if not schema_flag else 0],
         ["No AMP", -3 if not amp_flag else 0],
+        ["Unclean URL", -5 if not url_clean_flag else 0],
         ["Final Score", score]
     ]
     grading_df = pd.DataFrame(penalties, columns=["Scoring Rule", "Value"])
@@ -348,7 +278,6 @@ def analyze_url(url):
 
 # ================= RUN =================
 if analyze:
-    # Collect URLs
     urls = []
     if bulk_file:
         try:
@@ -390,7 +319,6 @@ if analyze:
             st.subheader("📐 SEO Score / Grading Logic")
             st.dataframe(grading_df, use_container_width=True)
 
-            # Tag with URL for Excel consolidation
             audit_df = audit_df.copy()
             audit_df.insert(0, "URL", u)
             grading_df = grading_df.copy()
@@ -406,7 +334,8 @@ if analyze:
         if all_audit:
             excel = format_excel({
                 "SEO Audit": pd.concat(all_audit, ignore_index=True),
-                "Score Logic": pd.concat(all_grading, ignore_index=True)
+                "Score Logic": pd.concat(all_grading, ignore_index=True),
+                "Explanation": EXPLANATIONS
             })
 
             st.download_button(
@@ -414,12 +343,3 @@ if analyze:
                 data=excel,
                 file_name="SEO_Audit_Final.xlsx"
             )
-
-# ================= NOTES =================
-st.markdown("""
-> Restored logic:
-> - News Image Count: figure>img (excluding logo/icon/ads), fallback to featured <img>, limited to 1 (hero image).
-> - Internal/External Links: counted only inside paragraphs to avoid nav/footer noise.
-> Google-friendly benchmarks kept:
-> - Title: 55–70 chars; Word count: 300+; H1=1; H2≥2; Internal 2–10; External ≤2; NewsArticle schema; AMP preferred; Clean URL.
-""")
