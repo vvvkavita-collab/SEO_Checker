@@ -86,24 +86,26 @@ def get_links(article, domain):
                 internal += 1
     return internal, external
 
-# ================= H2 COUNT (EXCLUDE H1) =================
-def get_h2_count_fixed(article, h1_list=None):
+# ================= ROBUST H2 COUNT =================
+def get_h2_count_fixed(article):
     """
-    Counts only true H2 headings inside the article.
-    Excludes H1 headings passed in h1_list.
-    Skips empty or ad/related/promo headings.
+    Counts only H2 headings that are direct descendants of <article> or main content div.
+    Skips H1 text, ads, promo, related links, and very short headings.
+    Ignores H2 in nav, aside, footer.
     """
-    if h1_list is None:
-        h1_list = []
+    # H1 inside article to exclude
+    h1_texts = [safe_text(h) for h in article.find_all("h1")]
 
     h2s = article.find_all("h2")
     real = []
     for h2 in h2s:
-        t = h2.get_text(" ", strip=True)
-        if not t:
+        # Ignore H2 in sidebar/nav/footer
+        if h2.find_parent(["nav", "aside", "footer"]):
             continue
-        # Skip headings matching H1 text exactly
-        if t in h1_list:
+        t = safe_text(h2)
+        if not t or t in h1_texts:
+            continue
+        if len(t) < 20:
             continue
         if re.search(r"(advertisement|related|subscribe|promo)", t, re.I):
             continue
@@ -218,10 +220,9 @@ def analyze_url(url):
 
     title_tag = soup.find("h1") or soup.find("title")
     title = safe_text(title_tag) if title_tag else "No H1/Title Found"
-    h1_texts = [title]  # exclude H1 from H2 count
 
     h1_count = len(article.find_all("h1")) or len(soup.find_all("h1"))
-    h2_count = get_h2_count_fixed(article, h1_list=h1_texts)
+    h2_count = get_h2_count_fixed(article)
 
     seo_title = generate_seo_title(title)
     paragraphs = get_real_paragraphs(article)
