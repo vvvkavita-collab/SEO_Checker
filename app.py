@@ -126,8 +126,6 @@ def get_url_words(url):
 
 def detect_unnecessary_url_words(url):
     words = get_url_words(url)
-
-    # Allow meaningful "for" usage
     safe_patterns = [
         r"jobs-for-(women|students|farmers)",
         r"scheme-for-(women|students|farmers)",
@@ -187,9 +185,48 @@ def has_newsarticle_schema(json_ld_list):
 def is_amp(soup):
     return bool(soup.find("link", rel="amphtml"))
 
+# ================= EXCEL FORMAT =================
+def format_excel(sheets):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        for name, df in sheets.items():
+            df.to_excel(writer, sheet_name=name, index=False)
+    output.seek(0)
+    wb = load_workbook(output)
+    for ws in wb.worksheets:
+        header_fill = PatternFill("solid", fgColor="D9EAF7")
+        bold = Font(bold=True)
+        border = Border(
+            left=Side(style="thin"),
+            right=Side(style="thin"),
+            top=Side(style="thin"),
+            bottom=Side(style="thin"),
+        )
+        for col in ws.columns:
+            max_len = max(len(str(c.value)) if c.value else 0 for c in col)
+            ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 3, 40)
+        for cell in ws[1]:
+            cell.font = bold
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = border
+        for row in ws.iter_rows(min_row=2):
+            for cell in row:
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+                cell.border = border
+        ws.sheet_view.showGridLines = False
+    final = BytesIO()
+    wb.save(final)
+    final.seek(0)
+    return final
+
 # ================= ANALYSIS =================
 def analyze_url(url):
-    soup = get_soup(url)
+    try:
+        soup = get_soup(url)
+    except Exception as e:
+        return pd.DataFrame([["Error", str(e), "-", "❌"]], columns=["Metric","Actual","Ideal","Verdict"]), pd.DataFrame([["Final Score", 0]], columns=["Scoring Rule","Value"])
+
     article = get_article(soup)
     domain = urlparse(url).netloc
 
@@ -225,6 +262,7 @@ def analyze_url(url):
         schema_flag, amp_flag, url_clean_flag, meta_image
     )
 
+    # --- AUDIT TABLE ---
     audit_df = pd.DataFrame([
         ["Title Character Count", title_len, "55–70", "✅" if 55 <= title_len <= 70 else "⚠️"],
         ["Suggested SEO Title", title, seo_title, "—"],
@@ -242,8 +280,81 @@ def analyze_url(url):
         ["Final SEO Score", f"{score}/100", "≥80", "✅" if score >= 80 else "⚠️"],
     ], columns=["Metric", "Actual", "Ideal", "Verdict"])
 
-    return audit_df
+    # --- SCORE LOGIC TABLE ---
+    grading_df = pd.DataFrame([
+        ["Base Score", 100],
+        ["Title outside 55–70", -12 if title_len < 55 or title_len > 70 else 0],
+        ["Word Count < 300", -12 if word_count < 300 else 0],
+        ["News Image Count < 1", -10 if img_count < 1 else 0],
+        ["No Meta Image", -5 if not meta_image else 0],
+        ["H1 Count != 1", -10 if h1_count != 1 else 0],
+        ["H2 Count < 2", -8 if h2_count < 2 else 0],
+        ["Internal Links out of range", -5 if internal < 2 or internal > 10 else 0],
+        ["External Links > 2", -4 if external > 2 else 0],
+        ["Unnecessary Words in Title", -6 if found_title_stop else 0],
+        ["Unnecessary Words in URL", -5 if found_url_stop else 0],
+        ["No NewsArticle schema", -10 if not schema_flag else 0],
+        ["No AMP", -3 if not amp_flag else 0],
+        ["Final Score", score]
+    ], columns=["Scoring Rule","Value"])
+
+    return audit_df, grading_df
 
 # ================= RUN =================
-if analyze and url_input:
-    st.dataframe(analyze_url(url_input), use_container_width=True)
+urls = []
+if bulk_file:
+    try:
+        raw = bulk_file.read().decode("utf-8", errors="ignore")
+        if bulk_file.name.lower().endswith(".csv"):
+            df_bulk = pd.read_csv(BytesIO(raw.encode("utf-8")), header=None)
+            urls = [str(x).strip() for x in df_bulk.iloc[:,0].tolist() if str(x).strip()]
+        else:
+            urls = [l.strip() for l in raw.splitlines() if l.strip()]
+    except Exception:
+        st.error("Could not read bulk file. Make sure it's a simple TXT/CSV with URLs.")
+if url_input:
+    urls.append(url_input.strip())
+
+if analyze and urls:
+    all_audit = []
+    all_grading = []
+
+    for idx, u in enumerate(urls, start=1):
+        st.subheader(f"📊 SEO Audit – {u}")
+        audit_df, grading_df = analyze_url(u)
+        st.dataframe(audit_df, use_container_width=True)
+        st.subheader("📐 SEO Score / Grading Logic")
+        st.dataframe(grading_df, use_container_width=True)
+
+        audit_df.insert(0, "URL", u)
+        grading_df.insert(0, "URL", u)
+        all_audit.append(audit_df)
+        all_grading.append(grading_df)
+
+    # --- Excel Export ---
+    EXPLANATIONS = pd.DataFrame([
+        ["Title Character Count", "Title length should be 55–70 chars for Google SERP", "Correct → CTR increases, snippet fully visible"],
+        ["Word Count", "Content depth", "300+ words considered informative by Google"],
+        ["News Image Count", "Minimum 1 authentic image", "Improves Google Discover & CTR"],
+        ["Meta Image", "Thumbnail for social/discover", "CTR & visibility improve"],
+        ["H1 Count", "Main headline clarity", "1 H1 helps Google understand topic"],
+        ["H2 Count", "Subheadings readability", "2+ H2 → structured content"],
+        ["Internal Links", "Navigation + SEO juice", "2–10 links → better crawl & engagement"],
+        ["External Links", "References & credibility", "≤2 → authority improves"],
+        ["Unnecessary Words (Title/URL)", "Filler words in title/url", "Avoid → clarity & CTR improve"],
+        ["Structured Data", "JSON-LD schema", "Correct → Google News/Top Stories possible"],
+        ["AMP Presence", "Accelerated Mobile Pages support", "Mobile visibility & Discover improve"],
+        ["Final SEO Score", "Overall SEO health", "≥80 → strong Google visibility"]
+    ], columns=["Metric","Meaning","Impact if Correct"])
+
+    excel_file = format_excel({
+        "SEO Audit": pd.concat(all_audit, ignore_index=True),
+        "Score Logic": pd.concat(all_grading, ignore_index=True),
+        "Explanation": EXPLANATIONS
+    })
+
+    st.download_button(
+        "⬇️ Download Final SEO Audit Excel",
+        data=excel_file,
+        file_name="SEO_Audit_Final.xlsx"
+    )
