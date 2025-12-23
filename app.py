@@ -138,16 +138,44 @@ def is_url_clean(url, seo_url):
     return orig_slug == clean_slug_part
 
 # ================= SCORE LOGIC =================
-def calculate_score(title_len, url_clean, has_stop):
+def calculate_score(title_len, word_count, img_count, h1_count, h2_count, internal_links, external_links, has_stop):
     score = 100
+
+    # Title Character Count
     if title_len > 60:
-        score -= 20
-    if not url_clean:
-        score -= 30
+        score -= 15
+
+    # Word Count
+    if word_count < 250:
+        score -= 15
+
+    # News Image Count
+    if img_count < 1:
+        score -= 10
+
+    # H1 Count
+    if h1_count != 1:
+        score -= 10
+
+    # H2 Count
+    if h2_count < 2:
+        score -= 10
+
+    # Internal Links
+    if internal_links < 2 or internal_links > 10:
+        score -= 5
+
+    # External Links
+    if external_links > 2:
+        score -= 5
+
+    # Unnecessary Words (Stop words in title)
     if has_stop:
         score -= 10
-    return max(score, 0)
 
+    # Ensure score is not negative
+    return max(score, 0)
+    
 # ================= EXCEL FORMAT =================
 def format_excel(sheets):
     output = BytesIO()
@@ -279,4 +307,5 @@ if analyze:
             data=excel,
             file_name="SEO_Audit_Final.xlsx"
         )
+
 
