@@ -120,9 +120,22 @@ def generate_clean_url(url, title):
     parsed = urlparse(url)
     slug = clean_slug(title)
     if not slug:
-        return url
-    base = parsed.path.rsplit("/", 1)[0]
-    return f"{parsed.scheme}://{parsed.netloc}{base}/{slug}"
+        return url  # fallback to original
+
+    # Build base path safely
+    path_parts = [p for p in parsed.path.split("/") if p]  # remove empty
+    if path_parts:
+        path_parts[-1] = slug  # replace last part with slug
+    else:
+        path_parts = [slug]
+
+    clean_path = "/" + "/".join(path_parts)
+    return f"{parsed.scheme}://{parsed.netloc}{clean_path}"
+
+def is_url_clean(url, seo_url):
+    orig_slug = urlparse(url).path.rstrip("/").split("/")[-1]
+    clean_slug_part = urlparse(seo_url).path.rstrip("/").split("/")[-1]
+    return orig_slug == clean_slug_part
 
 # ================= SCORE LOGIC =================
 def calculate_score(title_len, url_clean, has_stop):
@@ -155,10 +168,9 @@ def format_excel(sheets):
             bottom=Side(style="thin"),
         )
 
-        # Adjust column width with max cap
         for col in ws.columns:
             max_len = max(len(str(c.value)) if c.value else 0 for c in col)
-            ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 3, 40)
+            ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 3, 50)
 
         for cell in ws[1]:
             cell.font = bold
@@ -189,6 +201,7 @@ def analyze_url(url):
 
     seo_title = generate_seo_title(title)
     clean_url = generate_clean_url(url, seo_title)
+    url_clean_flag = is_url_clean(url, clean_url)
 
     paragraphs = get_real_paragraphs(article)
     word_count = sum(len(p.split()) for p in paragraphs)
@@ -199,7 +212,6 @@ def analyze_url(url):
     internal, external = get_links(article, domain)
 
     found_stop = [w for w in STOP_WORDS if f" {w} " in title.lower()]
-    url_clean_flag = url.rstrip("/") == clean_url.rstrip("/")
 
     score = calculate_score(visible_len(title), url_clean_flag, bool(found_stop))
 
@@ -214,7 +226,7 @@ def analyze_url(url):
         ["Internal Links", internal, "2–10", "❌" if internal < 2 else "✅"],
         ["External Links", external, "0–2", "❌" if external > 2 else "✅"],
         ["Unnecessary Words", ", ".join(found_stop) if found_stop else "None", "No", "❌" if found_stop else "✅"],
-        ["Suggested Clean SEO URL", clean_url, clean_url, "✅" if url_clean_flag else "❌"],
+        ["Suggested Clean SEO URL", url, clean_url, "✅" if url_clean_flag else "❌"],
         ["Title + URL SEO Score", f"{score} / 100", "≥ 80", "⚠️" if score < 80 else "✅"],
     ], columns=["Metric", "Actual", "Ideal", "Verdict"])
 
