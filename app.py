@@ -86,19 +86,19 @@ def get_links(article, domain):
                 internal += 1
     return internal, external
 
-def get_h2_count_fixed(article):
+# ================= H2 FIX =================
+def get_h2_list(article):
     h2s = article.find_all("h2")
     real = []
-    for idx, h2 in enumerate(h2s):
-        t = h2.get_text(strip=True)
-        if idx == 0 and len(t) > 100:
-            continue
-        if len(t) < 20:
-            continue
+    for h2 in h2s:
+        t = h2.get_text(" ", strip=True)
         if re.search(r"(advertisement|related|subscribe|promo)", t, re.I):
             continue
-        real.append(h2)
-    return len(real)
+        real.append(t)
+    return real
+
+def get_h2_count_fixed(article):
+    return len(get_h2_list(article))
 
 def generate_seo_title(title, max_len=70):
     if visible_len(title) <= max_len:
@@ -208,7 +208,6 @@ def analyze_url(url):
 
     title_tag = soup.find("h1") or soup.find("title")
     title = safe_text(title_tag) if title_tag else "No H1/Title Found"
-
     seo_title = generate_seo_title(title)
 
     paragraphs = get_real_paragraphs(article)
@@ -219,7 +218,8 @@ def analyze_url(url):
     meta_image = extract_meta_image(soup)
 
     h1_count = len(article.find_all("h1")) or len(soup.find_all("h1"))
-    h2_count = get_h2_count_fixed(article)
+    h2_list = get_h2_list(article)
+    h2_count = len(h2_list)
 
     internal, external = get_links(article, domain)
     found_stop = [w for w in STOP_WORDS if f" {w} " in title.lower()]
@@ -241,12 +241,12 @@ def analyze_url(url):
         has_stop=bool(found_stop),
         has_schema=schema_flag,
         amp_flag=amp_flag,
-        url_clean_flag=True,  # Always True because we just check length
+        url_clean_flag=True,
         meta_image=meta_image
     )
 
     # --- URL LENGTH CHECK ---
-    url_status = "Sahi hai" if len(url) <= 100 else "Lengthy hai"  # You can adjust 100 char limit
+    url_status = "Sahi hai" if len(url) <= 100 else "Lengthy hai"
 
     # ---- SEO Audit Table ----
     audit_df = pd.DataFrame([
@@ -257,6 +257,7 @@ def analyze_url(url):
         ["Meta Image (OG/Twitter)", meta_image or "None", "Present", "✅" if meta_image else "⚠️"],
         ["H1 Count", h1_count, "1", "✅" if h1_count == 1 else "⚠️"],
         ["H2 Count", h2_count, "2+", "✅" if h2_count >= 2 else "⚠️"],
+        ["H2 Texts", "; ".join(h2_list) or "None", "See headings", "—"],
         ["Internal Links", internal, "2–10", "✅" if 2 <= internal <= 10 else "⚠️"],
         ["External Links", external, "0–2", "✅" if external <= 2 else "⚠️"],
         ["Unnecessary Words", ", ".join(found_stop) if found_stop else "None", "No", "✅" if not found_stop else "⚠️"],
@@ -355,6 +356,7 @@ if analyze:
                 ["AMP Presence", "Accelerated Mobile Pages support", "Mobile visibility & Discover improve"],
                 ["URL Length Status", "Original URL length check", "Sahi hai / Lengthy hai"],
                 ["Title + URL SEO Score", "Overall SEO health", "≥80 → strong Google visibility"],
+                ["H2 Texts", "Subheading texts found in article", "See all H2 for content clarity"]
             ], columns=["Metric","Meaning","Impact if Correct"])
             
             excel = format_excel({
