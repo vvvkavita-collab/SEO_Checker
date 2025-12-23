@@ -7,7 +7,6 @@ from io import BytesIO
 import re
 import json
 import unicodedata
-
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -23,6 +22,11 @@ st.sidebar.header("SEO Mode")
 bulk_file = st.sidebar.file_uploader("Upload Bulk URLs (TXT / CSV)", type=["txt", "csv"])
 url_input = st.text_input("Paste URL")
 analyze = st.button("Analyze")
+
+# ================= STOP WORDS =================
+STOP_WORDS = [
+    "breaking", "exclusive", "shocking", "must read", "update", "alert"
+]
 
 # ================= HELPERS =================
 def get_soup(url):
@@ -43,7 +47,6 @@ def visible_len(text):
 def safe_text(el):
     return el.get_text(" ", strip=True) if el else ""
 
-# ================= CONTENT LOGIC =================
 def get_real_paragraphs(article):
     paras = []
     for p in article.find_all("p"):
@@ -110,6 +113,47 @@ def generate_seo_title(title, max_len=70):
         out = test
     return out
 
+def generate_clean_url(url, title):
+    # keyword-rich, lowercase, hyphen-separated
+    parsed = urlparse(url)
+    slug = re.sub(r"[^\w\s-]", "", title.lower()).strip()
+    slug = re.sub(r"\s+", "-", slug)
+    clean_url = f"{parsed.scheme}://{parsed.netloc}/{slug}"
+    return clean_url
+
+def is_url_clean(original, clean):
+    return original.rstrip("/") == clean.rstrip("/")
+
+def extract_meta_image(soup):
+    og = soup.find("meta", property="og:image")
+    tw = soup.find("meta", property="twitter:image")
+    return og["content"] if og and og.get("content") else (tw["content"] if tw and tw.get("content") else None)
+
+def extract_json_ld(soup):
+    scripts = soup.find_all("script", type="application/ld+json")
+    json_list = []
+    for s in scripts:
+        try:
+            data = json.loads(s.string)
+            json_list.append(data)
+        except:
+            continue
+    return json_list
+
+def has_newsarticle_schema(json_ld_list):
+    for jd in json_ld_list:
+        if isinstance(jd, dict) and jd.get("@type") == "NewsArticle":
+            return True
+        if isinstance(jd, list):
+            for item in jd:
+                if isinstance(item, dict) and item.get("@type") == "NewsArticle":
+                    return True
+    return False
+
+def is_amp(soup):
+    amp_tag = soup.find("link", rel="amphtml")
+    return bool(amp_tag)
+
 # ================= SCORE LOGIC =================
 def calculate_score(title_len, word_count, img_count, h1_count, h2_count,
                     internal_links, external_links, has_stop, has_schema, amp_flag, url_clean_flag, meta_image):
@@ -162,11 +206,9 @@ def format_excel(sheets):
             top=Side(style="thin"),
             bottom=Side(style="thin"),
         )
-        # Column width optimization
         for col in ws.columns:
             max_len = max(len(str(c.value)) if c.value else 0 for c in col)
-            width = min(max_len + 3, 40)  # narrower width
-            ws.column_dimensions[get_column_letter(col[0].column)].width = width
+            ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 3, 40)
         for cell in ws[1]:
             cell.font = bold
             cell.fill = header_fill
@@ -195,7 +237,6 @@ def analyze_url(url):
     article = get_article(soup)
     domain = urlparse(url).netloc
 
-    # Title (H1 preferred; fallback to <title>)
     title_tag = soup.find("h1") or soup.find("title")
     title = safe_text(title_tag) if title_tag else "No H1/Title Found"
 
