@@ -114,12 +114,19 @@ def generate_seo_title(title, max_len=70):
         out = test
     return out
 
+# ================= CLEAN URL LOGIC =================
 def generate_clean_url(url, title):
     parsed = urlparse(url)
-    # Transliterate Hindi/Unicode to ASCII
+    # Lowercase + ASCII transliteration
     slug = unidecode(title.lower())
-    slug = re.sub(r"[^\w\s-]", "", slug).strip()
+    # Remove all non a-z, 0-9, space or hyphen
+    slug = re.sub(r"[^a-z0-9\s-]", "", slug)
+    # Replace spaces with hyphen
     slug = re.sub(r"\s+", "-", slug)
+    # Reduce multiple hyphens to single
+    slug = re.sub(r"-+", "-", slug)
+    # Trim hyphens
+    slug = slug.strip("-")
     clean_url = f"{parsed.scheme}://{parsed.netloc}/{slug}"
     return clean_url
 
@@ -176,19 +183,19 @@ def calculate_score(title_len, word_count, img_count, h1_count, h2_count,
 
 # ================= EXPLANATION SHEET =================
 EXPLANATIONS = pd.DataFrame([
-    ["Title Character Count", "Title की लंबाई Google SERP में दिखने लायक होनी चाहिए (55–70 chars)", "सही होने पर CTR बढ़ता है और Google snippet पूरा दिखता है"],
-    ["Word Count", "Content depth दिखाता है", "300+ words होने पर Google इसे informative मानता है"],
-    ["News Image Count", "Article में कम से कम 1 authentic image", "सही होने पर Google Discover और CTR improve होता है"],
-    ["Meta Image (OG/Twitter)", "Social/Discover thumbnail", "सही होने पर CTR और visibility बढ़ती है"],
-    ["H1 Count", "Main headline clarity", "1 H1 होने पर Google को topic साफ़ समझ आता है"],
-    ["H2 Count", "Subheadings readability", "2+ H2 होने पर content structured लगता है"],
-    ["Internal Links", "Site navigation + SEO juice", "2–10 होने पर crawlability और engagement बढ़ता है"],
-    ["External Links", "Credibility दिखाने के लिए references", "≤2 होने पर authority improve होती है"],
-    ["Unnecessary Words", "Title में filler words", "Avoid करने से clarity और CTR improve होता है"],
-    ["Structured Data (NewsArticle)", "JSON-LD schema", "सही होने पर Google News/Top Stories में दिखने की संभावना बढ़ती है"],
-    ["AMP Presence", "Accelerated Mobile Pages support", "AMP होने पर mobile visibility और Discover में chances बढ़ते हैं"],
-    ["Suggested Clean SEO URL", "Keyword-rich, short URL", "Crawlability और CTR improve होता है"],
-    ["Title + URL SEO Score", "Overall SEO health", "80+ होने पर Google visibility strong होती है"],
+    ["Title Character Count", "Title length should be 55–70 chars for Google SERP", "Correct → CTR increases, snippet fully visible"],
+    ["Word Count", "Content depth", "300+ words considered informative by Google"],
+    ["News Image Count", "Minimum 1 authentic image", "Improves Google Discover & CTR"],
+    ["Meta Image (OG/Twitter)", "Thumbnail for social/discover", "CTR & visibility improve"],
+    ["H1 Count", "Main headline clarity", "1 H1 helps Google understand topic"],
+    ["H2 Count", "Subheadings readability", "2+ H2 → structured content"],
+    ["Internal Links", "Navigation + SEO juice", "2–10 links → better crawl & engagement"],
+    ["External Links", "References & credibility", "≤2 → authority improves"],
+    ["Unnecessary Words", "Filler words in title", "Avoid → clarity & CTR improve"],
+    ["Structured Data (NewsArticle)", "JSON-LD schema", "Correct → Google News/Top Stories possible"],
+    ["AMP Presence", "Accelerated Mobile Pages support", "Mobile visibility & Discover improve"],
+    ["Suggested Clean SEO URL", "Keyword-rich, short URL", "Crawlability & CTR improve"],
+    ["Title + URL SEO Score", "Overall SEO health", "≥80 → strong Google visibility"],
 ], columns=["Metric","Meaning","Impact if Correct"])
 
 # ================= EXCEL FORMAT =================
@@ -231,9 +238,7 @@ def analyze_url(url):
     try:
         soup = get_soup(url)
     except Exception as e:
-        err_df = pd.DataFrame([
-            ["Error", str(e), "-", "❌"]
-        ], columns=["Metric","Actual","Ideal","Verdict"])
+        err_df = pd.DataFrame([["Error", str(e), "-", "❌"]], columns=["Metric","Actual","Ideal","Verdict"])
         return err_df, pd.DataFrame([["Final Score", 0]], columns=["Scoring Rule", "Value"])
 
     article = get_article(soup)
