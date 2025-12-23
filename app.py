@@ -219,7 +219,7 @@ def analyze_url(url):
     audit_df = pd.DataFrame([
         ["Title Character Count", visible_len(title), "≤ 60", "❌" if visible_len(title) > 60 else "✅"],
         ["Suggested SEO Title", title, seo_title, "—"],
-        ["Word Count", word_count, "250+", "❌" if word_count < 250 else "✅"],
+        ["Word Count", word_count, "450+", "❌" if word_count < 450 else "✅"],
         ["News Image Count", img_count, "1+", "❌" if img_count < 1 else "✅"],
         ["H1 Count", h1_count, "1", "❌" if h1_count != 1 else "✅"],
         ["H2 Count", h2_count, "2+", "❌" if h2_count < 2 else "✅"],
@@ -279,3 +279,4 @@ if analyze:
             data=excel,
             file_name="SEO_Audit_Final.xlsx"
         )
+
