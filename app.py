@@ -86,13 +86,24 @@ def get_links(article, domain):
                 internal += 1
     return internal, external
 
-# ================= H2 COUNT ONLY =================
-def get_h2_count_fixed(article):
+# ================= H2 COUNT (EXCLUDE H1) =================
+def get_h2_count_fixed(article, h1_list=None):
+    """
+    Counts only true H2 headings inside the article.
+    Excludes H1 headings passed in h1_list.
+    Skips empty or ad/related/promo headings.
+    """
+    if h1_list is None:
+        h1_list = []
+
     h2s = article.find_all("h2")
     real = []
     for h2 in h2s:
         t = h2.get_text(" ", strip=True)
-        if not t:  # skip empty headings
+        if not t:
+            continue
+        # Skip headings matching H1 text exactly
+        if t in h1_list:
             continue
         if re.search(r"(advertisement|related|subscribe|promo)", t, re.I):
             continue
@@ -207,25 +218,22 @@ def analyze_url(url):
 
     title_tag = soup.find("h1") or soup.find("title")
     title = safe_text(title_tag) if title_tag else "No H1/Title Found"
-    seo_title = generate_seo_title(title)
+    h1_texts = [title]  # exclude H1 from H2 count
 
+    h1_count = len(article.find_all("h1")) or len(soup.find_all("h1"))
+    h2_count = get_h2_count_fixed(article, h1_list=h1_texts)
+
+    seo_title = generate_seo_title(title)
     paragraphs = get_real_paragraphs(article)
     word_count = sum(len(p.split()) for p in paragraphs)
-
     images = get_real_images(article)
     img_count = len(images)
     meta_image = extract_meta_image(soup)
-
-    h1_count = len(article.find_all("h1")) or len(soup.find_all("h1"))
-    h2_count = get_h2_count_fixed(article)
-
     internal, external = get_links(article, domain)
     found_stop = [w for w in STOP_WORDS if f" {w} " in title.lower()]
-
     json_ld = extract_json_ld(soup)
     schema_flag = has_newsarticle_schema(json_ld)
     amp_flag = is_amp(soup)
-
     title_len = visible_len(title)
 
     score = calculate_score(
