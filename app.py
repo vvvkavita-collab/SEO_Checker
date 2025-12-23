@@ -121,14 +121,11 @@ def generate_clean_url(url, title):
     slug = clean_slug(title)
     if not slug:
         return url  # fallback to original
-
-    # Build base path safely
-    path_parts = [p for p in parsed.path.split("/") if p]  # remove empty
+    path_parts = [p for p in parsed.path.split("/") if p]
     if path_parts:
-        path_parts[-1] = slug  # replace last part with slug
+        path_parts[-1] = slug
     else:
         path_parts = [slug]
-
     clean_path = "/" + "/".join(path_parts)
     return f"{parsed.scheme}://{parsed.netloc}{clean_path}"
 
@@ -140,52 +137,32 @@ def is_url_clean(url, seo_url):
 # ================= SCORE LOGIC =================
 def calculate_score(title_len, word_count, img_count, h1_count, h2_count, internal_links, external_links, has_stop):
     score = 100
-
-    # Title Character Count
     if title_len > 60:
         score -= 15
-
-    # Word Count
     if word_count < 250:
         score -= 15
-
-    # News Image Count
     if img_count < 1:
         score -= 10
-
-    # H1 Count
     if h1_count != 1:
         score -= 10
-
-    # H2 Count
     if h2_count < 2:
         score -= 10
-
-    # Internal Links
     if internal_links < 2 or internal_links > 10:
         score -= 5
-
-    # External Links
     if external_links > 2:
         score -= 5
-
-    # Unnecessary Words (Stop words in title)
     if has_stop:
         score -= 10
-
-    # Ensure score is not negative
     return max(score, 0)
-    
+
 # ================= EXCEL FORMAT =================
 def format_excel(sheets):
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         for name, df in sheets.items():
             df.to_excel(writer, sheet_name=name, index=False)
-
     output.seek(0)
     wb = load_workbook(output)
-
     for ws in wb.worksheets:
         header_fill = PatternFill("solid", fgColor="D9EAF7")
         bold = Font(bold=True)
@@ -195,24 +172,19 @@ def format_excel(sheets):
             top=Side(style="thin"),
             bottom=Side(style="thin"),
         )
-
         for col in ws.columns:
             max_len = max(len(str(c.value)) if c.value else 0 for c in col)
             ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 3, 50)
-
         for cell in ws[1]:
             cell.font = bold
             cell.fill = header_fill
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             cell.border = border
-
         for row in ws.iter_rows(min_row=2):
             for cell in row:
                 cell.alignment = Alignment(vertical="top", wrap_text=True)
                 cell.border = border
-
         ws.sheet_view.showGridLines = False
-
     final = BytesIO()
     wb.save(final)
     final.seek(0)
@@ -223,43 +195,39 @@ def analyze_url(url):
     soup = get_soup(url)
     article = get_article(soup)
     domain = urlparse(url).netloc
-
     title_tag = soup.find("h1")
     title = title_tag.get_text(strip=True) if title_tag else "No H1 Found"
-
     seo_title = generate_seo_title(title)
     clean_url = generate_clean_url(url, seo_title)
     url_clean_flag = is_url_clean(url, clean_url)
-
     paragraphs = get_real_paragraphs(article)
     word_count = sum(len(p.split()) for p in paragraphs)
-
     img_count = len(get_real_images(article))
     h1_count = len(article.find_all("h1"))
     h2_count = get_h2_count_fixed(article)
     internal, external = get_links(article, domain)
-
     found_stop = [w for w in STOP_WORDS if f" {w} " in title.lower()]
 
     score = calculate_score(
-    title_len=visible_len(title),
-    word_count=word_count,
-    img_count=img_count,
-    h1_count=h1_count,
-    h2_count=h2_count,
-    internal_links=internal,
-    external_links=external,
-    has_stop=bool(found_stop)
-)
+        title_len=visible_len(title),
+        word_count=word_count,
+        img_count=img_count,
+        h1_count=h1_count,
+        h2_count=h2_count,
+        internal_links=internal,
+        external_links=external,
+        has_stop=bool(found_stop)
+    )
+
     # ---- SEO Audit Table ----
     audit_df = pd.DataFrame([
         ["Title Character Count", visible_len(title), "≤ 60", "❌" if visible_len(title) > 60 else "✅"],
         ["Suggested SEO Title", title, seo_title, "—"],
-        ["Word Count", word_count, "450+", "❌" if word_count < 450 else "✅"],
+        ["Word Count", word_count, "250+", "❌" if word_count < 250 else "✅"],
         ["News Image Count", img_count, "1+", "❌" if img_count < 1 else "✅"],
         ["H1 Count", h1_count, "1", "❌" if h1_count != 1 else "✅"],
         ["H2 Count", h2_count, "2+", "❌" if h2_count < 2 else "✅"],
-        ["Internal Links", internal, "2–10", "❌" if internal < 2 else "✅"],
+        ["Internal Links", internal, "2–10", "❌" if internal < 2 or internal > 10 else "✅"],
         ["External Links", external, "0–2", "❌" if external > 2 else "✅"],
         ["Unnecessary Words", ", ".join(found_stop) if found_stop else "None", "No", "❌" if found_stop else "✅"],
         ["Suggested Clean SEO URL", url, clean_url, "✅" if url_clean_flag else "❌"],
@@ -267,16 +235,18 @@ def analyze_url(url):
     ], columns=["Metric", "Actual", "Ideal", "Verdict"])
 
     # ---- Grading / Score Table ----
-    penalties = []
-    penalties.append(["Base Score", 100])
-    if visible_len(title) > 60:
-        penalties.append(["Title > 60 characters", -20])
-    if not url_clean_flag:
-        penalties.append(["URL not clean", -30])
-    if found_stop:
-        penalties.append(["Unnecessary words in title", -10])
-    penalties.append(["Final Score", score])
-
+    penalties = [
+        ["Base Score", 100],
+        ["Title > 60 characters", -15 if visible_len(title) > 60 else 0],
+        ["Word Count < 250", -15 if word_count < 250 else 0],
+        ["News Image Count < 1", -10 if img_count < 1 else 0],
+        ["H1 Count != 1", -10 if h1_count != 1 else 0],
+        ["H2 Count < 2", -10 if h2_count < 2 else 0],
+        ["Internal Links out of range", -5 if internal < 2 or internal > 10 else 0],
+        ["External Links > 2", -5 if external > 2 else 0],
+        ["Unnecessary words in title", -10 if found_stop else 0],
+        ["Final Score", score]
+    ]
     grading_df = pd.DataFrame(penalties, columns=["Scoring Rule", "Value"])
 
     return audit_df, grading_df
@@ -315,6 +285,3 @@ if analyze:
             data=excel,
             file_name="SEO_Audit_Final.xlsx"
         )
-
-
-
