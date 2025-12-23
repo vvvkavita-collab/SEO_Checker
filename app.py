@@ -23,7 +23,9 @@ bulk_file = st.sidebar.file_uploader("Upload Bulk URLs (TXT / CSV)", type=["txt"
 url_input = st.text_input("Paste URL")
 analyze = st.button("Analyze")
 
-STOP_WORDS = ["breaking", "exclusive", "shocking", "must read", "update", "alert"]
+STOP_WORDS = [
+    "breaking", "exclusive", "shocking", "must read", "update", "alert"
+]
 
 # ================= HELPERS =================
 def get_soup(url):
@@ -43,58 +45,6 @@ def visible_len(text):
 
 def safe_text(el):
     return el.get_text(" ", strip=True) if el else ""
-
-# ================= CLEAN URL LOGIC =================
-def generate_clean_url(url, title):
-    parsed = urlparse(url)
-    title = title.lower()
-    words = re.findall(r"[a-z0-9]+", title)
-    slug = "-".join(words)
-    slug = re.sub(r"-+", "-", slug).strip("-")
-    clean_url = f"{parsed.scheme}://{parsed.netloc}/{slug}"
-    return clean_url
-
-def check_url_length(url, seo_title):
-    """
-    Returns 'Sahi hai' or 'Lengthy hai' based on whether
-    the clean URL is short, readable, and mostly English.
-    """
-    clean_url = generate_clean_url(url, seo_title)
-    non_eng = len(re.findall(r'[^a-z0-9\-/]', clean_url.lower()))
-    if len(clean_url) > 75 or non_eng > 0:
-        return "Lengthy hai"
-    else:
-        return "Sahi hai"
-
-def extract_meta_image(soup):
-    og = soup.find("meta", property="og:image")
-    tw = soup.find("meta", property="twitter:image")
-    return og["content"] if og and og.get("content") else (tw["content"] if tw and tw.get("content") else None)
-
-def extract_json_ld(soup):
-    scripts = soup.find_all("script", type="application/ld+json")
-    json_list = []
-    for s in scripts:
-        try:
-            data = json.loads(s.string)
-            json_list.append(data)
-        except:
-            continue
-    return json_list
-
-def has_newsarticle_schema(json_ld_list):
-    for jd in json_ld_list:
-        if isinstance(jd, dict) and jd.get("@type") == "NewsArticle":
-            return True
-        if isinstance(jd, list):
-            for item in jd:
-                if isinstance(item, dict) and item.get("@type") == "NewsArticle":
-                    return True
-    return False
-
-def is_amp(soup):
-    amp_tag = soup.find("link", rel="amphtml")
-    return bool(amp_tag)
 
 def get_real_paragraphs(article):
     paras = []
@@ -164,7 +114,7 @@ def generate_seo_title(title, max_len=70):
 
 # ================= SCORE LOGIC =================
 def calculate_score(title_len, word_count, img_count, h1_count, h2_count,
-                    internal_links, external_links, has_stop, has_schema, amp_flag, url_status, meta_image):
+                    internal_links, external_links, has_stop, has_schema, amp_flag, url_clean_flag, meta_image):
     score = 100
     if title_len > 70 or title_len < 55: score -= 12
     if word_count < 300: score -= 12
@@ -177,25 +127,38 @@ def calculate_score(title_len, word_count, img_count, h1_count, h2_count,
     if has_stop: score -= 6
     if not has_schema: score -= 10
     if not amp_flag: score -= 3
-    if url_status == "Lengthy hai": score -= 5
+    if not url_clean_flag: score -= 5
     return max(score, 0)
 
-# ================= EXPLANATION SHEET =================
-EXPLANATIONS = pd.DataFrame([
-    ["Title Character Count", "Title length should be 55–70 chars", "Correct → CTR increases"],
-    ["Word Count", "Content depth", "300+ words considered informative"],
-    ["News Image Count", "Minimum 1 authentic image", "Improves Google Discover & CTR"],
-    ["Meta Image (OG/Twitter)", "Thumbnail for social/discover", "CTR & visibility improve"],
-    ["H1 Count", "Main headline clarity", "1 H1 helps Google understand topic"],
-    ["H2 Count", "Subheadings readability", "2+ H2 → structured content"],
-    ["Internal Links", "Navigation + SEO juice", "2–10 links → better crawl & engagement"],
-    ["External Links", "References & credibility", "≤2 → authority improves"],
-    ["Unnecessary Words", "Filler words in title", "Avoid → clarity & CTR improve"],
-    ["Structured Data (NewsArticle)", "JSON-LD schema", "Correct → Google News/Top Stories possible"],
-    ["AMP Presence", "Accelerated Mobile Pages support", "Mobile visibility & Discover improve"],
-    ["URL Length Status", "Short & readable vs lengthy", "Lengthy → reduces SEO effectiveness"],
-    ["Title + URL SEO Score", "Overall SEO health", "≥80 → strong Google visibility"],
-], columns=["Metric","Meaning","Impact if Correct"])
+def extract_meta_image(soup):
+    og = soup.find("meta", property="og:image")
+    tw = soup.find("meta", property="twitter:image")
+    return og["content"] if og and og.get("content") else (tw["content"] if tw and tw.get("content") else None)
+
+def extract_json_ld(soup):
+    scripts = soup.find_all("script", type="application/ld+json")
+    json_list = []
+    for s in scripts:
+        try:
+            data = json.loads(s.string)
+            json_list.append(data)
+        except:
+            continue
+    return json_list
+
+def has_newsarticle_schema(json_ld_list):
+    for jd in json_ld_list:
+        if isinstance(jd, dict) and jd.get("@type") == "NewsArticle":
+            return True
+        if isinstance(jd, list):
+            for item in jd:
+                if isinstance(item, dict) and item.get("@type") == "NewsArticle":
+                    return True
+    return False
+
+def is_amp(soup):
+    amp_tag = soup.find("link", rel="amphtml")
+    return bool(amp_tag)
 
 # ================= EXCEL FORMAT =================
 def format_excel(sheets):
@@ -209,8 +172,10 @@ def format_excel(sheets):
         header_fill = PatternFill("solid", fgColor="D9EAF7")
         bold = Font(bold=True)
         border = Border(
-            left=Side(style="thin"), right=Side(style="thin"),
-            top=Side(style="thin"), bottom=Side(style="thin")
+            left=Side(style="thin"),
+            right=Side(style="thin"),
+            top=Side(style="thin"),
+            bottom=Side(style="thin"),
         )
         for col in ws.columns:
             max_len = max(len(str(c.value)) if c.value else 0 for c in col)
@@ -240,29 +205,50 @@ def analyze_url(url):
 
     article = get_article(soup)
     domain = urlparse(url).netloc
+
     title_tag = soup.find("h1") or soup.find("title")
     title = safe_text(title_tag) if title_tag else "No H1/Title Found"
 
     seo_title = generate_seo_title(title)
-    url_status = check_url_length(url, seo_title)
 
     paragraphs = get_real_paragraphs(article)
     word_count = sum(len(p.split()) for p in paragraphs)
+
     images = get_real_images(article)
     img_count = len(images)
     meta_image = extract_meta_image(soup)
+
     h1_count = len(article.find_all("h1")) or len(soup.find_all("h1"))
     h2_count = get_h2_count_fixed(article)
+
     internal, external = get_links(article, domain)
     found_stop = [w for w in STOP_WORDS if f" {w} " in title.lower()]
+
     json_ld = extract_json_ld(soup)
     schema_flag = has_newsarticle_schema(json_ld)
     amp_flag = is_amp(soup)
+
     title_len = visible_len(title)
 
-    score = calculate_score(title_len, word_count, img_count, h1_count, h2_count,
-                            internal, external, bool(found_stop), schema_flag, amp_flag, url_status, meta_image)
+    score = calculate_score(
+        title_len=title_len,
+        word_count=word_count,
+        img_count=img_count,
+        h1_count=h1_count,
+        h2_count=h2_count,
+        internal_links=internal,
+        external_links=external,
+        has_stop=bool(found_stop),
+        has_schema=schema_flag,
+        amp_flag=amp_flag,
+        url_clean_flag=True,  # Always True because we just check length
+        meta_image=meta_image
+    )
 
+    # --- URL LENGTH CHECK ---
+    url_status = "Sahi hai" if len(url) <= 100 else "Lengthy hai"  # You can adjust 100 char limit
+
+    # ---- SEO Audit Table ----
     audit_df = pd.DataFrame([
         ["Title Character Count", title_len, "55–70", "✅" if 55 <= title_len <= 70 else "⚠️"],
         ["Suggested SEO Title", title, seo_title, "—"],
@@ -276,7 +262,7 @@ def analyze_url(url):
         ["Unnecessary Words", ", ".join(found_stop) if found_stop else "None", "No", "✅" if not found_stop else "⚠️"],
         ["Structured Data (NewsArticle)", "Yes" if schema_flag else "No", "Yes", "✅" if schema_flag else "⚠️"],
         ["AMP Presence", "Yes" if amp_flag else "No", "Optional", "✅" if amp_flag else "ℹ️"],
-        ["URL Length Status", url_status, "Sahi hai / Lengthy hai", "✅" if url_status=="Sahi hai" else "⚠️"],
+        ["URL Length Status", url, url_status, "✅" if url_status=="Sahi hai" else "⚠️"],
         ["Title + URL SEO Score", f"{score} / 100", "≥80", "✅" if score >= 80 else "⚠️"],
     ], columns=["Metric", "Actual", "Ideal", "Verdict"])
 
@@ -293,7 +279,6 @@ def analyze_url(url):
         ["Unnecessary words in title", -6 if found_stop else 0],
         ["No NewsArticle schema", -10 if not schema_flag else 0],
         ["No AMP", -3 if not amp_flag else 0],
-        ["URL Lengthy", -5 if url_status=="Lengthy hai" else 0],
         ["Final Score", score]
     ]
     grading_df = pd.DataFrame(penalties, columns=["Scoring Rule", "Value"])
@@ -322,8 +307,10 @@ if analyze:
     else:
         all_audit = []
         all_grading = []
+
         progress = st.progress(0)
         status = st.empty()
+
         total = len(urls)
         for idx, u in enumerate(urls, start=1):
             status.text(f"Analyzing {idx}/{total}: {u}")
@@ -337,6 +324,7 @@ if analyze:
 
             st.subheader(f"📊 SEO Audit – {u}")
             st.dataframe(audit_df, use_container_width=True)
+
             st.subheader("📐 SEO Score / Grading Logic")
             st.dataframe(grading_df, use_container_width=True)
 
@@ -344,18 +332,37 @@ if analyze:
             audit_df.insert(0, "URL", u)
             grading_df = grading_df.copy()
             grading_df.insert(0, "URL", u)
+
             all_audit.append(audit_df)
             all_grading.append(grading_df)
+
             progress.progress(idx / total)
 
         status.text("Analysis complete ✔️")
 
         if all_audit:
+            EXPLANATIONS = pd.DataFrame([
+                ["Title Character Count", "Title length should be 55–70 chars for Google SERP", "Correct → CTR increases, snippet fully visible"],
+                ["Word Count", "Content depth", "300+ words considered informative by Google"],
+                ["News Image Count", "Minimum 1 authentic image", "Improves Google Discover & CTR"],
+                ["Meta Image (OG/Twitter)", "Thumbnail for social/discover", "CTR & visibility improve"],
+                ["H1 Count", "Main headline clarity", "1 H1 helps Google understand topic"],
+                ["H2 Count", "Subheadings readability", "2+ H2 → structured content"],
+                ["Internal Links", "Navigation + SEO juice", "2–10 links → better crawl & engagement"],
+                ["External Links", "References & credibility", "≤2 → authority improves"],
+                ["Unnecessary Words", "Filler words in title", "Avoid → clarity & CTR improve"],
+                ["Structured Data (NewsArticle)", "JSON-LD schema", "Correct → Google News/Top Stories possible"],
+                ["AMP Presence", "Accelerated Mobile Pages support", "Mobile visibility & Discover improve"],
+                ["URL Length Status", "Original URL length check", "Sahi hai / Lengthy hai"],
+                ["Title + URL SEO Score", "Overall SEO health", "≥80 → strong Google visibility"],
+            ], columns=["Metric","Meaning","Impact if Correct"])
+            
             excel = format_excel({
                 "SEO Audit": pd.concat(all_audit, ignore_index=True),
                 "Score Logic": pd.concat(all_grading, ignore_index=True),
                 "Explanation": EXPLANATIONS
             })
+
             st.download_button(
                 "⬇️ Download Final SEO Audit Excel",
                 data=excel,
