@@ -43,44 +43,47 @@ def visible_len(text):
 def safe_text(el):
     return el.get_text(" ", strip=True) if el else ""
 
-# ================= CONTENT LOGIC =================
+# ================= CONTENT LOGIC (RESTORED) =================
 def get_real_paragraphs(article):
     paras = []
     for p in article.find_all("p"):
         text = p.get_text(" ", strip=True)
         if len(text) < 80:
             continue
-        if re.search(r"(advertisement|also read|read more|inputs|agency|promo)", text, re.I):
+        if re.search(r"(advertisement|also read|read more|inputs|agency)", text, re.I):
             continue
         paras.append(text)
     return paras
 
 def get_real_images(article):
+    # Restore original: prefer figure>img excluding logos/icons/ads; fallback to <img> with 'featured' class; return up to 1
     imgs = []
-    for fig in article.find_all(["figure", "div"], class_=re.compile("figure|image|photo", re.I)):
+    for fig in article.find_all("figure"):
         img = fig.find("img")
         if img and img.get("src"):
-            if not re.search(r"(logo|icon|sprite|ads|pixel)", img["src"], re.I):
+            if not re.search(r"(logo|icon|sprite|ads)", img["src"], re.I):
                 imgs.append(img)
     if not imgs:
         for img in article.find_all("img"):
-            if img.get("src") and not re.search(r"(logo|icon|sprite|ads|pixel)", img["src"], re.I):
+            if img.get("src") and "featured" in " ".join(img.get("class", [])):
                 imgs.append(img)
-    return imgs
+    return imgs[:1]  # count hero image only, as per original script
 
 def get_links(article, domain):
+    # Restore original: count links only within paragraphs to avoid nav/footer noise
     internal = external = 0
-    for a in article.find_all("a", href=True):
-        h = a["href"].strip()
-        if h.startswith("#") or "javascript" in h:
-            continue
-        if h.startswith("http"):
-            if domain in h:
-                internal += 1
+    for p in article.find_all("p"):
+        for a in p.find_all("a", href=True):
+            h = a["href"].strip()
+            if h.startswith("#") or "javascript" in h:
+                continue
+            if h.startswith("http"):
+                if domain in h:
+                    internal += 1
+                else:
+                    external += 1
             else:
-                external += 1
-        else:
-            internal += 1
+                internal += 1
     return internal, external
 
 def get_h2_count_fixed(article):
@@ -99,7 +102,7 @@ def get_h2_count_fixed(article):
 
 # ================= SEO TITLE =================
 def generate_seo_title(title, max_len=70):
-    # Google SERP friendly: aim 55–70, truncate beyond 70
+    # Aim 55–70, truncate beyond 70
     if visible_len(title) <= max_len:
         return title
     words = title.split()
@@ -156,7 +159,7 @@ def has_newsarticle_schema(json_ld):
     for obj in json_ld:
         t = obj.get("@type")
         if isinstance(t, list):
-            if any(tt.lower() == "newsarticle" for tt in t if isinstance(tt, str)):
+            if any(isinstance(tt, str) and tt.lower() == "newsarticle" for tt in t):
                 return True
         elif isinstance(t, str) and t.lower() == "newsarticle":
             return True
@@ -170,7 +173,6 @@ def extract_meta_image(soup):
     return None
 
 def is_amp(soup):
-    # Heuristic AMP detection
     if soup.find("link", rel="amphtml"):
         return True
     html_tag = soup.find("html")
@@ -182,13 +184,13 @@ def is_amp(soup):
 def calculate_score(title_len, word_count, img_count, h1_count, h2_count,
                     internal_links, external_links, has_stop, has_schema, amp_flag):
     score = 100
-    # Title length (Google: aim 55–70)
+    # Title length (aim 55–70)
     if title_len > 70 or title_len < 55:
         score -= 12
     # Word count (news minimum depth)
     if word_count < 300:
         score -= 12
-    # Images
+    # Images (hero image expected)
     if img_count < 1:
         score -= 10
     # H1
@@ -197,7 +199,7 @@ def calculate_score(title_len, word_count, img_count, h1_count, h2_count,
     # H2
     if h2_count < 2:
         score -= 8
-    # Links
+    # Links (paragraph-level only)
     if internal_links < 2 or internal_links > 10:
         score -= 5
     if external_links > 2:
@@ -205,10 +207,10 @@ def calculate_score(title_len, word_count, img_count, h1_count, h2_count,
     # Stop words in title
     if has_stop:
         score -= 6
-    # Structured data bonus/penalty
+    # Structured data
     if not has_schema:
         score -= 10
-    # AMP bonus (for news visibility; optional)
+    # AMP (optional bonus)
     if not amp_flag:
         score -= 3
     return max(score, 0)
@@ -279,10 +281,13 @@ def analyze_url(url):
     img_count = len(images)
     meta_image = extract_meta_image(soup)
 
+    # H1/H2 counts: within article; fallback to whole soup for H1
     h1_count = len(article.find_all("h1")) or len(soup.find_all("h1"))
     h2_count = get_h2_count_fixed(article)
 
+    # Links (paragraph-level only, restored)
     internal, external = get_links(article, domain)
+
     found_stop = [w for w in STOP_WORDS if f" {w} " in title.lower()]
 
     json_ld = extract_json_ld(soup)
@@ -313,8 +318,8 @@ def analyze_url(url):
         ["Meta Image (OG/Twitter)", meta_image or "None", "Present", "✅" if meta_image else "⚠️"],
         ["H1 Count", h1_count, "1", "✅" if h1_count == 1 else "⚠️"],
         ["H2 Count", h2_count, "2+", "✅" if h2_count >= 2 else "⚠️"],
-        ["Internal Links", internal, "2–10", "✅" if 2 <= internal <= 10 else "⚠️"],
-        ["External Links", external, "0–2", "✅" if external <= 2 else "⚠️"],
+        ["Internal Links (paragraphs)", internal, "2–10", "✅" if 2 <= internal <= 10 else "⚠️"],
+        ["External Links (paragraphs)", external, "0–2", "✅" if external <= 2 else "⚠️"],
         ["Unnecessary Words", ", ".join(found_stop) if found_stop else "None", "No", "✅" if not found_stop else "⚠️"],
         ["Structured Data (NewsArticle)", "Yes" if schema_flag else "No", "Yes", "✅" if schema_flag else "⚠️"],
         ["AMP Presence", "Yes" if amp_flag else "No", "Optional (Yes preferred)", "✅" if amp_flag else "ℹ️"],
@@ -330,8 +335,8 @@ def analyze_url(url):
         ["News Image Count < 1", -10 if img_count < 1 else 0],
         ["H1 Count != 1", -10 if h1_count != 1 else 0],
         ["H2 Count < 2", -8 if h2_count < 2 else 0],
-        ["Internal Links out of range", -5 if internal < 2 or internal > 10 else 0],
-        ["External Links > 2", -4 if external > 2 else 0],
+        ["Internal Links out of range (paragraphs)", -5 if internal < 2 or internal > 10 else 0],
+        ["External Links > 2 (paragraphs)", -4 if external > 2 else 0],
         ["Unnecessary words in title", -6 if found_stop else 0],
         ["No NewsArticle schema", -10 if not schema_flag else 0],
         ["No AMP", -3 if not amp_flag else 0],
@@ -348,7 +353,6 @@ if analyze:
     if bulk_file:
         try:
             raw = bulk_file.read().decode("utf-8", errors="ignore")
-            # If CSV, try first column as URLs
             if bulk_file.name.lower().endswith(".csv"):
                 df_bulk = pd.read_csv(BytesIO(raw.encode("utf-8")), header=None)
                 urls = [str(x).strip() for x in df_bulk.iloc[:,0].tolist() if str(x).strip()]
@@ -413,11 +417,9 @@ if analyze:
 
 # ================= NOTES =================
 st.markdown("""
-> Tip: This auditor uses Google-friendly benchmarks for news:
-> - Title: 55–70 chars, single H1, 2+ H2.
-> - Word count: 300+ (breaking can be lower; analysis can be higher).
-> - Images: ≥1 image; high-quality OG/Twitter image recommended (≥1200px).
-> - Links: 2–10 internal, ≤2 external.
-> - Structured data: NewsArticle JSON-LD present; AMP preferred for Top Stories/Discover.
-> - Clean, keyword-rich URLs; avoid filler stop-words in title.
+> Restored logic:
+> - News Image Count: figure>img (excluding logo/icon/ads), fallback to featured <img>, limited to 1 (hero image).
+> - Internal/External Links: counted only inside paragraphs to avoid nav/footer noise.
+> Google-friendly benchmarks kept:
+> - Title: 55–70 chars; Word count: 300+; H1=1; H2≥2; Internal 2–10; External ≤2; NewsArticle schema; AMP preferred; Clean URL.
 """)
