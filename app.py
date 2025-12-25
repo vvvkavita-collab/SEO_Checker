@@ -312,7 +312,7 @@ def analyze_url(url):
         ["H1 Count != 1", -10 if h1_count != 1 else 0],
         ["H2 Count < 2", -8 if h2_count < 2 else 0],
         ["Internal Links out of range", -5 if internal < 2 or internal > 10 else 0],
-        ["External Links > 2", -4 if external > 2 else 0],
+        ["External Links out of range", -4 if external < 1 or external > 2 else 0],
         ["Unnecessary Words in Title", -6 if found_title_stop else 0],
         ["Unnecessary Words in URL", -5 if found_url_stop else 0],
         ["No NewsArticle schema", -10 if not schema_flag else 0],
@@ -387,6 +387,7 @@ if analyze and urls:
         data=excel_file,
         file_name="SEO_Audit_Final.xlsx"
     )
+
 
 
 
