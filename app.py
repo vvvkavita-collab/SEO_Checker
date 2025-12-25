@@ -172,7 +172,7 @@ def calculate_score(title_len, word_count, img_count, h1_count, h2_count,
     if h1_count != 1: score -= 10
     if h2_count < 2: score -= 8
     if internal_links < 2 or internal_links > 10: score -= 5
-    if external_links > 2: score -= 4
+    if external_links < 1 or external_links >2: score -= 4
     if has_stop_title: score -= 6
     if not has_schema: score -= 10
     if not amp_flag: score -= 3
@@ -294,7 +294,7 @@ def analyze_url(url):
         ["H1 Count", h1_count, "1", "✅" if h1_count == 1 else "⚠️"],
         ["H2 Count", h2_count, "2+", "✅" if h2_count >= 2 else "⚠️"],
         ["Internal Links", internal, "2–10", "✅" if 2 <= internal <= 10 else "⚠️"],
-        ["External Links", external, "0–2", "✅" if external <= 2 else "⚠️"],
+        ["External Links", external, "1–2", "✅" if external <= 2 else "⚠️"],
         ["Unnecessary Words (Title)", ", ".join(found_title_stop) or "None", "No", "⚠️" if found_title_stop else "✅"],
         ["Unnecessary Words (URL)", ", ".join(found_url_stop) or "None", "No", "⚠️" if found_url_stop else "✅"],
         ["Structured Data", "Yes" if schema_flag else "No", "Yes", "✅" if schema_flag else "⚠️"],
@@ -387,4 +387,5 @@ if analyze and urls:
         data=excel_file,
         file_name="SEO_Audit_Final.xlsx"
     )
+
 
