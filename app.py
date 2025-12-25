@@ -346,7 +346,14 @@ if analyze and urls:
         audit_df, grading_df = analyze_url(u)
         st.dataframe(audit_df, use_container_width=True)
         st.subheader("📐 SEO Score / Grading Logic")
-        st.dataframe(grading_df, use_container_width=True)
+        st.dataframe(
+    grading_df,
+    use_container_width=False,
+    column_config={
+        "Scoring Rule": st.column_config.TextColumn(width="medium"),
+        "Value": st.column_config.NumberColumn(width="small"),
+    }
+)
 
         audit_df.insert(0, "URL", u)
         grading_df.insert(0, "URL", u)
@@ -380,3 +387,4 @@ if analyze and urls:
         data=excel_file,
         file_name="SEO_Audit_Final.xlsx"
     )
+
