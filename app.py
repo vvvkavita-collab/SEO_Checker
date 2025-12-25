@@ -294,7 +294,7 @@ def analyze_url(url):
         ["H1 Count", h1_count, "1", "✅" if h1_count == 1 else "⚠️"],
         ["H2 Count", h2_count, "2+", "✅" if h2_count >= 2 else "⚠️"],
         ["Internal Links", internal, "2–10", "✅" if 2 <= internal <= 10 else "⚠️"],
-        ["External Links", external, "1–2", "✅" if external <= 2 else "⚠️"],
+        ["External Links", external, "1–2", "✅" if 1 <= external <= 2 else "⚠️"],
         ["Unnecessary Words (Title)", ", ".join(found_title_stop) or "None", "No", "⚠️" if found_title_stop else "✅"],
         ["Unnecessary Words (URL)", ", ".join(found_url_stop) or "None", "No", "⚠️" if found_url_stop else "✅"],
         ["Structured Data", "Yes" if schema_flag else "No", "Yes", "✅" if schema_flag else "⚠️"],
@@ -387,5 +387,6 @@ if analyze and urls:
         data=excel_file,
         file_name="SEO_Audit_Final.xlsx"
     )
+
 
 
