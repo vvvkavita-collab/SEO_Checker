@@ -47,12 +47,36 @@ analyze = st.button("Analyze")
 
 # ================= STOP WORDS =================
 TITLE_STOP_WORDS = [
-    "breaking", "exclusive", "shocking", "must read", "update", "alert"
+    "breaking",
+    "exclusive",
+    "shocking",
+    "must read",
+    "update",
+    "alert",
+    "latest",
+    "big",
+    "viral"
 ]
 
 URL_STOP_WORDS = [
+    # Existing
     "for", "today", "latest", "news", "update", "information",
-    "details", "story", "article", "this", "that", "here", "now"
+    "details", "story", "article", "this", "that", "here", "now",
+
+    # Added – filler / weak words
+    "about", "on", "in", "to", "of", "with",
+
+    # Added – time based
+    "current", "recent", "new",
+
+    # Added – clickbait / noise
+    "breaking", "exclusive", "viral", "shocking", "must", "read",
+
+    # Added – question words (bad in URL)
+    "what", "why", "how", "when", "where", "who",
+
+    # Added – CMS / technical
+    "page", "pages", "index", "view", "print", "amp", "category", "tag"
 ]
 
 # ================= HELPERS =================
@@ -387,6 +411,7 @@ if analyze and urls:
         data=excel_file,
         file_name="SEO_Audit_Final.xlsx"
     )
+
 
 
 
