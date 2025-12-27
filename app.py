@@ -13,7 +13,7 @@ from openpyxl.utils import get_column_letter
 
 # ================= PAGE CONFIG =================
 st.set_page_config(page_title="Advanced SEO Auditor – Google Guidelines", layout="wide")
-st.title("🧠 Advanced SEO Auditor – News & Blog (Google Ready)")
+st.title("🧠 Advanced SEO Auditor")
 
 # ================= UI FIX: CENTER ALIGN NUMBERS =================
 st.markdown("""
@@ -411,6 +411,7 @@ if analyze and urls:
         data=excel_file,
         file_name="SEO_Audit_Final.xlsx"
     )
+
 
 
 
