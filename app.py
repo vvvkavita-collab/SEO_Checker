@@ -15,7 +15,7 @@ from openpyxl.utils import get_column_letter
 st.set_page_config(page_title="Advanced SEO Auditor – Google Guidelines", layout="wide")
 st.title("🧠 Advanced SEO Auditor")
 
-GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"  # 🔑 Put your API key here
+GEMINI_API_KEY = "AIzaSyAcXzhkMGvk4wJJ0RUoOZY8hWqrAn-x5rk"  # 🔑 Put your API key here
 
 # ================= UI STYLING =================
 st.markdown("""
@@ -328,3 +328,4 @@ if analyze and urls:
         data=excel_file,
         file_name="SEO_Audit_Final.xlsx"
     )
+
