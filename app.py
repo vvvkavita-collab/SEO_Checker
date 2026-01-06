@@ -15,7 +15,7 @@ from openpyxl.utils import get_column_letter
 # ====== NEW: Gemini API ======
 from google import genai  # pip install google-genai
 
-GEMINI_API_KEY = os.getenv("AIzaSyAcXzhkMGvk4wJJ0RUoOZY8hWqrAn-x5rk", "").strip()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = "gemini-2.5-flash"  # SEO text ke liye fast aur sasta model [web:65]
 
 gemini_client = None
@@ -507,3 +507,4 @@ if analyze and urls:
         data=excel_file,
         file_name="SEO_Audit_Final.xlsx"
     )
+
