@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urlparse, quote_plus
+from urllib.parse import urlparse
 from io import BytesIO
 import re
 import json
@@ -164,16 +164,6 @@ def generate_seo_title(title, max_len=70):
         out = test
     return out
 
-# ================= ADD-ON (NEW FUNCTION ONLY) =================
-def chatgpt_seo_link(current_title):
-    prompt = (
-        "Generate top 5 SEO-friendly news titles based on the following headline, "
-        "following Google Search and Google News SEO guidelines. "
-        "Avoid clickbait. Keep titles under 70 characters.\n\n"
-        f"Headline: {current_title}"
-    )
-    return f"https://chat.openai.com/?q={quote_plus(prompt)}"
-
 # ================= URL CLEAN LOGIC =================
 def get_url_words(url):
     path = urlparse(url).path
@@ -289,9 +279,17 @@ def analyze_url(url):
     title_tag = soup.find("h1") or soup.find("title")
     title = safe_text(title_tag)
 
-    seo_title = generate_seo_title(title)
-    seo_link = f"[Generate Top 5 SEO Titles]({chatgpt_seo_link(title)})"
     title_len = visible_len(title)
+
+    # 🔹 GEMINI PROMPT + LINK
+    gemini_prompt = (
+        f"Generate top 5 SEO friendly news headlines as per Google Search "
+        f"and Google News guidelines for the following article title:\n\n{title}"
+    )
+    gemini_link = (
+        "https://gemini.google.com/app?q="
+        + requests.utils.quote(gemini_prompt)
+    )
 
     paragraphs = get_real_paragraphs(article)
     word_count = sum(len(p.split()) for p in paragraphs)
@@ -322,7 +320,12 @@ def analyze_url(url):
     # --- AUDIT TABLE ---
     audit_df = pd.DataFrame([
         ["Title Character Count", title_len, "55–70", "✅" if 55 <= title_len <= 70 else "⚠️"],
-        ["Suggested SEO Title", title, seo_link, "—"],
+        [
+            "Suggested SEO Title",
+            title,
+            f"[Click here – Generate Top 5 SEO Titles in Gemini]({gemini_link})",
+            "🔗"
+        ],
         ["Word Count", word_count, "300+", "✅" if word_count >= 300 else "⚠️"],
         ["News Image Count", img_count, "1+", "✅" if img_count >= 1 else "⚠️"],
         ["Meta Image", meta_image or "None", "Present", "✅" if meta_image else "⚠️"],
@@ -336,7 +339,6 @@ def analyze_url(url):
         ["AMP Presence", "Yes" if amp_flag else "No", "Optional", "ℹ️"],
         ["Final SEO Score", f"{score}/100", "≥80", "✅" if score >= 80 else "⚠️"],
     ], columns=["Metric", "Actual", "Ideal", "Verdict"])
-    st.markdown(seo_link, unsafe_allow_html=True)
 
     # --- SCORE LOGIC TABLE ---
     grading_df = pd.DataFrame([
@@ -379,27 +381,17 @@ if analyze and urls:
 
     for idx, u in enumerate(urls, start=1):
         st.subheader(f"📊 SEO Audit – {u}")
-
         audit_df, grading_df = analyze_url(u)
-
         st.dataframe(audit_df, use_container_width=True)
-
         st.subheader("📐 SEO Score / Grading Logic")
         st.dataframe(
-            grading_df,
-            use_container_width=False,
-            column_config={
-                "Scoring Rule": st.column_config.TextColumn(width="medium"),
-                "Value": st.column_config.NumberColumn(width="small"),
-            }
-        )
-
-        audit_df.insert(0, "URL", u)
-        grading_df.insert(0, "URL", u)
-
-        all_audit.append(audit_df)
-        all_grading.append(grading_df)
-
+    grading_df,
+    use_container_width=False,
+    column_config={
+        "Scoring Rule": st.column_config.TextColumn(width="medium"),
+        "Value": st.column_config.NumberColumn(width="small"),
+    }
+)
 
         audit_df.insert(0, "URL", u)
         grading_df.insert(0, "URL", u)
@@ -433,10 +425,3 @@ if analyze and urls:
         data=excel_file,
         file_name="SEO_Audit_Final.xlsx"
     )
-
-
-
-
-
-
-
