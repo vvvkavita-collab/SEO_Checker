@@ -147,29 +147,73 @@ def has_newsarticle_schema(json_ld_list):
 
 def is_amp(soup): return bool(soup.find("link", rel="amphtml"))
 
-# ================= GEMINI TOP 5 TITLES =================
-def fetch_gemini_titles(title):
-    prompt=f"""Generate 5 SEO friendly news headlines (55–65 chars) in professional tone, no clickbait, for this title:\n{title}"""
-    url=f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
-    payload={"contents":[{"parts":[{"text":prompt}]}]}
+# ===== Updated fetch_gemini_titles =====
+def fetch_gemini_titles(title: str):
+    """
+    Generate 5 SEO friendly titles using Gemini API (valid endpoint & model).
+    """
+    model_name = "models/gemini-2.5-flash"
+    url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent"
+    
+    prompt = (
+        f"Generate 5 SEO friendly news headlines (55–70 chars) "
+        f"in professional tone, no clickbait, for this title:\n{title}"
+    )
+    
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ],
+        "generationConfig": {
+            "maxOutputTokens": 150,
+            "temperature": 0.7,
+            "topP": 0.9,
+            "topK": 40
+        }
+    }
+    
     try:
-        r=requests.post(url,json=payload,timeout=30)
-        data=r.json()
-        text=data["candidates"][0]["content"]["parts"][0]["text"]
-        lines=[t.strip("-• ").strip() for t in text.split("\n") if len(t.strip())>15]
-        unique_titles=[]
+        r = requests.post(
+            url,
+            headers={
+                "x-goog-api-key": GEMINI_API_KEY,
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=30
+        )
+        data = r.json()
+        
+        # parse text
+        candidates = data.get("candidates") or []
+        if not candidates:
+            return [title]
+        
+        text = ""
+        for c in candidates:
+            # aggregate parts text
+            parts = c.get("content", {}).get("parts", [])
+            for p in parts:
+                text += p.get("text", "")
+        
+        # Clean & split into separate lines
+        lines = [t.strip("-• ").strip() for t in text.split("\n") if t.strip()]
+        unique_titles = []
         for t in lines:
-            if t not in unique_titles: unique_titles.append(t)
-        return unique_titles[:5]
-    except:
+            if len(t) > 20 and t not in unique_titles:
+                unique_titles.append(t)
+        
+        # Return up to 5
+        return unique_titles[:5] or [title]
+    
+    except Exception as e:
+        # If API fails
+        print("Gemini fetch error:", e)
         return [title]
-
-def ctr_score(title):
-    # Dummy CTR logic: longer, specific keywords, avoid stop words
-    score=100
-    score-=sum(5 for w in TITLE_STOP_WORDS if w in title.lower())
-    score-=max(0, 70-len(title))*0.5
-    return score
 
 # ================= EXCEL EXPORT =================
 def format_excel(sheets):
@@ -328,4 +372,5 @@ if analyze and urls:
         data=excel_file,
         file_name="SEO_Audit_Final.xlsx"
     )
+
 
