@@ -1,4 +1,3 @@
-import os
 import streamlit as st
 import pandas as pd
 import requests
@@ -11,19 +10,6 @@ import unicodedata
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-
-# ====== NEW: Gemini API ======
-from google import genai  # pip install google-genai
-
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = "gemini-2.5-flash"  # SEO text ke liye fast aur sasta model [web:65]
-
-gemini_client = None
-if GEMINI_API_KEY:
-    try:
-        gemini_client = genai.Client(api_key=GEMINI_API_KEY)  # [web:53][web:54]
-    except Exception as e:
-        gemini_client = None
 
 # ================= PAGE CONFIG =================
 st.set_page_config(page_title="Advanced SEO Auditor – Google Guidelines", layout="wide")
@@ -280,68 +266,12 @@ def format_excel(sheets):
     final.seek(0)
     return final
 
-# ====== NEW: Gemini SEO title generator ======
-def get_gemini_seo_titles(url, actual_title, content_snippet):
-    """
-    Returns a list of up to 5 suggested SEO titles using Gemini.
-    """
-    if gemini_client is None:
-        return ["⚠️ Gemini API key not configured."]
-
-    prompt = f"""
-You are an expert news SEO editor.
-
-Given:
-- News URL: {url}
-- Current Title: {actual_title}
-- Content Snippet: {content_snippet}
-
-Task:
-1. Suggest 5 SEO-friendly Hindi or Hinglish news titles for this article.
-2. Each title must:
-   - Follow Google News and SEO best practices.
-   - Be between 55 and 70 characters.
-   - Be clear, specific and highly clickable.
-   - Avoid clickbait words like "shocking", "breaking", "must read", etc.
-3. Return exactly 5 titles, numbered 1 to 5 on separate lines.
-"""
-    try:
-        resp = gemini_client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt
-        )  # [web:53][web:65]
-        text = resp.text.strip()
-    except Exception as e:
-        return [f"⚠️ Gemini error: {e}"]
-
-    # Split into lines, keep non-empty 5 lines max
-    lines = [l.strip("•- ").strip() for l in text.splitlines() if l.strip()]
-    # Filter only lines that look like titles
-    titles = []
-    for line in lines:
-        # Remove leading "1. ", "2)" etc.
-        line = re.sub(r"^[0-9]+\s*[\.\)\-]\s*", "", line).strip()
-        if line and len(line) > 10:
-            titles.append(line)
-        if len(titles) >= 5:
-            break
-
-    if not titles:
-        return ["⚠️ Gemini did not return clear titles."]
-
-    return titles
-
 # ================= ANALYSIS =================
 def analyze_url(url):
     try:
         soup = get_soup(url)
     except Exception as e:
-        return (
-            pd.DataFrame([["Error", str(e), "-", "❌"]],
-                         columns=["Metric","Actual","Ideal","Verdict"]),
-            pd.DataFrame([["Final Score", 0]], columns=["Scoring Rule","Value"]),
-            []
-        )
+        return pd.DataFrame([["Error", str(e), "-", "❌"]], columns=["Metric","Actual","Ideal","Verdict"]), pd.DataFrame([["Final Score", 0]], columns=["Scoring Rule","Value"])
 
     article = get_article(soup)
     domain = urlparse(url).netloc
@@ -354,9 +284,6 @@ def analyze_url(url):
 
     paragraphs = get_real_paragraphs(article)
     word_count = sum(len(p.split()) for p in paragraphs)
-
-    # Content snippet for Gemini (first 2 paragraphs)
-    snippet = " ".join(paragraphs[:2])[:800]
 
     img_count = len(get_real_images(article))
     meta_image = extract_meta_image(soup)
@@ -384,7 +311,7 @@ def analyze_url(url):
     # --- AUDIT TABLE ---
     audit_df = pd.DataFrame([
         ["Title Character Count", title_len, "55–70", "✅" if 55 <= title_len <= 70 else "⚠️"],
-        ["Suggested SEO Title (Actual)", title, seo_title, "—"],
+        ["Suggested SEO Title", title, seo_title, "—"],
         ["Word Count", word_count, "300+", "✅" if word_count >= 300 else "⚠️"],
         ["News Image Count", img_count, "1+", "✅" if img_count >= 1 else "⚠️"],
         ["Meta Image", meta_image or "None", "Present", "✅" if meta_image else "⚠️"],
@@ -417,7 +344,7 @@ def analyze_url(url):
         ["Final Score", score]
     ], columns=["Scoring Rule","Value"])
 
-    return audit_df, grading_df, {"url": url, "title": title, "snippet": snippet}
+    return audit_df, grading_df
 
 # ================= RUN =================
 urls = []
@@ -435,45 +362,22 @@ if url_input:
     urls.append(url_input.strip())
 
 if analyze and urls:
-    if not GEMINI_API_KEY:
-        st.warning("⚠️ Gemini API key not found. Set GEMINI_API_KEY environment variable to enable title suggestions.")
-
     all_audit = []
     all_grading = []
 
     for idx, u in enumerate(urls, start=1):
         st.subheader(f"📊 SEO Audit – {u}")
-        audit_df, grading_df, info = analyze_url(u)
-
+        audit_df, grading_df = analyze_url(u)
         st.dataframe(audit_df, use_container_width=True)
-
-        # ====== NEW: Gemini SEO title suggestions section ======
-        if gemini_client is not None:
-            with st.expander("✨ Generate Top 5 SEO Titles (Gemini)"):
-                if st.button(f"Generate Titles for URL #{idx}", key=f"gemini_btn_{idx}"):
-                    with st.spinner("Generating titles from Gemini..."):
-                        titles = get_gemini_seo_titles(
-                            url=info["url"],
-                            actual_title=info["title"],
-                            content_snippet=info["snippet"],
-                        )
-                    # Show in table
-                    titles_df = pd.DataFrame(
-                        {"Suggested SEO Titles (Gemini)": titles}
-                    )
-                    st.table(titles_df)
-        else:
-            st.info("Gemini title suggestions disabled (no valid API client).")
-
         st.subheader("📐 SEO Score / Grading Logic")
         st.dataframe(
-            grading_df,
-            use_container_width=False,
-            column_config={
-                "Scoring Rule": st.column_config.TextColumn(width="medium"),
-                "Value": st.column_config.NumberColumn(width="small"),
-            }
-        )
+    grading_df,
+    use_container_width=False,
+    column_config={
+        "Scoring Rule": st.column_config.TextColumn(width="medium"),
+        "Value": st.column_config.NumberColumn(width="small"),
+    }
+)
 
         audit_df.insert(0, "URL", u)
         grading_df.insert(0, "URL", u)
@@ -507,4 +411,3 @@ if analyze and urls:
         data=excel_file,
         file_name="SEO_Audit_Final.xlsx"
     )
-
