@@ -164,6 +164,16 @@ def generate_seo_title(title, max_len=70):
         out = test
     return out
 
+# ================= ADD-ON (NEW FUNCTION ONLY) =================
+def chatgpt_seo_link(current_title):
+    prompt = (
+        "Generate top 5 SEO-friendly news titles based on the following headline, "
+        "following Google Search and Google News SEO guidelines. "
+        "Avoid clickbait. Keep titles under 70 characters.\n\n"
+        f"Headline: {current_title}"
+    )
+    return f"https://chat.openai.com/?q={quote_plus(prompt)}"
+
 # ================= URL CLEAN LOGIC =================
 def get_url_words(url):
     path = urlparse(url).path
@@ -411,6 +421,7 @@ if analyze and urls:
         data=excel_file,
         file_name="SEO_Audit_Final.xlsx"
     )
+
 
 
 
