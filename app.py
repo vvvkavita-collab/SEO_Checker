@@ -59,12 +59,23 @@ TITLE_STOP_WORDS = [
 ]
 
 URL_STOP_WORDS = [
+    # Existing
     "for", "today", "latest", "news", "update", "information",
     "details", "story", "article", "this", "that", "here", "now",
+
+    # Added – filler / weak words
     "about", "on", "in", "to", "of", "with",
+
+    # Added – time based
     "current", "recent", "new",
+
+    # Added – clickbait / noise
     "breaking", "exclusive", "viral", "shocking", "must", "read",
+
+    # Added – question words (bad in URL)
     "what", "why", "how", "when", "where", "who",
+
+    # Added – CMS / technical
     "page", "pages", "index", "view", "print", "amp", "category", "tag"
 ]
 
@@ -72,7 +83,7 @@ URL_STOP_WORDS = [
 def get_soup(url):
     r = requests.get(url, headers=HEADERS, timeout=25)
     r.raise_for_status()
-    return BeautifulSoup(r.text, "lax")
+    return BeautifulSoup(r.text, "lxml")
 
 def get_article(soup):
     return (
@@ -140,6 +151,18 @@ def get_h2_count_fixed(article):
             continue
         real.append(h2)
     return len(real)
+
+def generate_seo_title(title, max_len=70):
+    if visible_len(title) <= max_len:
+        return title
+    words = title.split()
+    out = ""
+    for w in words:
+        test = (out + " " + w).strip()
+        if visible_len(test) > max_len:
+            break
+        out = test
+    return out
 
 # ================= URL CLEAN LOGIC =================
 def get_url_words(url):
@@ -255,6 +278,8 @@ def analyze_url(url):
 
     title_tag = soup.find("h1") or soup.find("title")
     title = safe_text(title_tag)
+
+    seo_title = generate_seo_title(title)
     title_len = visible_len(title)
 
     paragraphs = get_real_paragraphs(article)
@@ -283,10 +308,10 @@ def analyze_url(url):
         schema_flag, amp_flag, url_clean_flag, meta_image
     )
 
-    # --- AUDIT TABLE --- ✅ Meta Length TITLE के ठीक बाद
+    # --- AUDIT TABLE ---
     audit_df = pd.DataFrame([
-        ["Title", title[:100] + "..." if len(title) > 100 else title, "Present", "✅"],
-        ["Meta Length", title_len, "55–70", "✅" if 55 <= title_len <= 70 else "⚠️"],
+        ["Title Character Count", title_len, "55–70", "✅" if 55 <= title_len <= 70 else "⚠️"],
+        ["Suggested SEO Title", title, seo_title, "—"],
         ["Word Count", word_count, "300+", "✅" if word_count >= 300 else "⚠️"],
         ["News Image Count", img_count, "1+", "✅" if img_count >= 1 else "⚠️"],
         ["Meta Image", meta_image or "None", "Present", "✅" if meta_image else "⚠️"],
@@ -301,10 +326,10 @@ def analyze_url(url):
         ["Final SEO Score", f"{score}/100", "≥80", "✅" if score >= 80 else "⚠️"],
     ], columns=["Metric", "Actual", "Ideal", "Verdict"])
 
-    # --- SCORE LOGIC TABLE --- ✅ Meta Length scoring भी पहले
+    # --- SCORE LOGIC TABLE ---
     grading_df = pd.DataFrame([
         ["Base Score", 100],
-        ["Meta Length outside 55–70", -12 if title_len < 55 or title_len > 70 else 0],
+        ["Title outside 55–70", -12 if title_len < 55 or title_len > 70 else 0],
         ["Word Count < 300", -12 if word_count < 300 else 0],
         ["News Image Count < 1", -10 if img_count < 1 else 0],
         ["No Meta Image", -5 if not meta_image else 0],
@@ -346,13 +371,13 @@ if analyze and urls:
         st.dataframe(audit_df, use_container_width=True)
         st.subheader("📐 SEO Score / Grading Logic")
         st.dataframe(
-            grading_df,
-            use_container_width=False,
-            column_config={
-                "Scoring Rule": st.column_config.TextColumn(width="medium"),
-                "Value": st.column_config.NumberColumn(width="small"),
-            }
-        )
+    grading_df,
+    use_container_width=False,
+    column_config={
+        "Scoring Rule": st.column_config.TextColumn(width="medium"),
+        "Value": st.column_config.NumberColumn(width="small"),
+    }
+)
 
         audit_df.insert(0, "URL", u)
         grading_df.insert(0, "URL", u)
@@ -361,19 +386,18 @@ if analyze and urls:
 
     # --- Excel Export ---
     EXPLANATIONS = pd.DataFrame([
-        ["Title", "Main page title", "Must be present and relevant"],
-        ["Meta Length", "Meta title character count", "55–70 chars → CTR increases"],
-        ["Word Count", "Content depth", "300+ words considered informative"],
-        ["News Image Count", "Minimum 1 authentic image", "Improves Google Discover"],
-        ["Meta Image", "Social thumbnail", "CTR & visibility improve"],
-        ["H1 Count", "Main headline", "1 H1 helps topic understanding"],
-        ["H2 Count", "Subheadings", "2+ H2 → better structure"],
-        ["Internal Links", "Site navigation", "2–10 optimal range"],
-        ["External Links", "Authority signals", "1–2 credible references"],
-        ["Unnecessary Words", "Title/URL fillers", "Remove → better CTR"],
-        ["Structured Data", "JSON-LD schema", "NewsArticle → rich results"],
-        ["AMP Presence", "Mobile optimization", "Better mobile visibility"],
-        ["Final SEO Score", "Overall health", "≥80 → strong ranking potential"]
+        ["Title Character Count", "Title length should be 55–70 chars for Google SERP", "Correct → CTR increases, snippet fully visible"],
+        ["Word Count", "Content depth", "300+ words considered informative by Google"],
+        ["News Image Count", "Minimum 1 authentic image", "Improves Google Discover & CTR"],
+        ["Meta Image", "Thumbnail for social/discover", "CTR & visibility improve"],
+        ["H1 Count", "Main headline clarity", "1 H1 helps Google understand topic"],
+        ["H2 Count", "Subheadings readability", "2+ H2 → structured content"],
+        ["Internal Links", "Navigation + SEO juice", "2–10 links → better crawl & engagement"],
+        ["External Links", "References & credibility", "≤2 → authority improves"],
+        ["Unnecessary Words (Title/URL)", "Filler words in title/url", "Avoid → clarity & CTR improve"],
+        ["Structured Data", "JSON-LD schema", "Correct → Google News/Top Stories possible"],
+        ["AMP Presence", "Accelerated Mobile Pages support", "Mobile visibility & Discover improve"],
+        ["Final SEO Score", "Overall SEO health", "≥80 → strong Google visibility"]
     ], columns=["Metric","Meaning","Impact if Correct"])
 
     excel_file = format_excel({
